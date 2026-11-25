@@ -9,6 +9,23 @@
 # Each driver: series id (see macro_series.yaml), good = whether a RISE helps (up) or hurts (down)
 # the industry, and why = the one-line reason shown to the user.
 # not_tracked: drivers that matter but have no free data source; shown as a note.
+# Name overrides: a phrase in the company name (lower case, spaces count) -> industry. Checked first.
+name_overrides:
+  " bse limited ": capital_markets
+  "central depo": capital_markets
+  "computer age mngt": capital_markets
+  "multi commodity exchange": capital_markets
+  "kfin tech": capital_markets
+  "angel one": capital_markets
+  "motilal oswal": capital_markets
+  "nuvama wealth": capital_markets
+  "360 one": capital_markets
+  "adani enterprises": general
+  " hubtown ": realty
+  " realty ": realty
+  " estates ": realty
+  " developers ": realty
+  " properties ": realty
 industries:
   insurance:
     label: Insurance

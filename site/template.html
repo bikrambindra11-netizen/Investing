@@ -114,15 +114,12 @@ footer { font-size: 12px; color: var(--muted); padding-block: 0 30px }
   <nav class="tabs" aria-label="Sections">
     <a href="#market" data-tab="market">Market</a>
     <a href="#investing" data-tab="investing">Investing</a>
-    <a href="#industries" data-tab="industries">Industries</a>
-    <a href="#economy" data-tab="economy">Economy</a>
-    <a href="#trading" data-tab="trading">Market pulse</a>
   </nav>
   <span class="fresh" id="fresh">Loading data…</span>
 </div></header>
 
 <main class="wrap" id="app"><p class="loading">Loading the market…</p></main>
-<footer class="wrap">Personal screening tool. Not investment advice. Prices: NSE/BSE close files and Upstox minute prices; economy: MoSPI, RBI, FRED; news: Google News.</footer>
+<footer class="wrap">Personal tool. Investing: Graham and Buffett value from the company's statements (Upstox). Trading: charts from NSE/BSE and Upstox prices. Not investment advice.</footer>
 
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
 <script id="portal-data" type="application/json">__PORTAL_DATA__</script>
@@ -235,7 +232,7 @@ function renderMarket() {
       <section class="panel movers"><h2>Top losers</h2><ol>${mv(liquid.slice(-5).reverse())}</ol></section>
     </div>
     <p class="tiny" style="margin:-6px 0 0">Gainers and losers: stocks with at least ₹1 crore traded in the last full session.</p>
-    <section class="panel" id="mkt-news"><h2>News moving prices now</h2><p class="tiny">Loading…</p></section>
+
     <section class="panel">
       <div class="controls">
         <input type="search" id="q" placeholder="Search by company, symbol or ISIN" value="${esc(view.q)}" aria-label="Search stocks">
@@ -257,8 +254,6 @@ function renderMarket() {
   document.querySelectorAll("th button").forEach((b) => b.addEventListener("click", () => {
     const k = b.dataset.k; view.desc = view.sort === k ? !view.desc : k !== "s"; view.sort = k; view.page = 0; drawTable();
   }));
-  loadNews().then((n) => { const el = document.getElementById("mkt-news"); if (!el) return;
-    el.innerHTML = n ? `<h2>News moving prices now</h2><p class="small">${esc(n.summary)}</p>${newsEventsBlock(n)}<p class="tiny">As of ${ago(n.generated_at)}. Already priced into every stock's overall score and the Investing ranking.</p>` : `<h2>News moving prices now</h2><p class="tiny">Open on claude.ai to load the news.</p>`; });
   document.getElementById("prev").addEventListener("click", () => { view.page--; drawTable(); });
   document.getElementById("next").addEventListener("click", () => { view.page++; drawTable(); });
   drawTable();
@@ -314,82 +309,78 @@ function peersTable(list, highlight) {
 }
 
 // ---------- stock page
+// Graham and Buffett value cards (page database: value/meta, value/cNNN, value/iN)
+const VAL = { meta: undefined, chunks: {}, index: null };
+async function valueMeta() {
+  if (VAL.meta !== undefined) return VAL.meta;
+  await caps; if (!DB) return (VAL.meta = null);
+  try { const d = await DB.doc("value/meta").get(); VAL.meta = d.exists ? d.data() : null; } catch (e) { VAL.meta = null; }
+  return VAL.meta;
+}
+async function valueCard(isin) {
+  const m = await valueMeta(); if (!m) return undefined;
+  const k = "c" + String(fnv(isin) % m.chunks).padStart(3, "0");
+  if (!VAL.chunks[k]) VAL.chunks[k] = DB.doc("value/" + k).get().then((d) => (d.exists ? unz(d.data().z) : {})).catch(() => ({}));
+  return (await VAL.chunks[k])[isin] || null;
+}
+async function valueIndex() {
+  if (VAL.index) return VAL.index;
+  const m = await valueMeta(); if (!m) return null;
+  const parts = await Promise.all(Array.from({ length: m.index_parts }, (_, k) => DB.doc("value/i" + k).get().then((d) => (d.exists ? unz(d.data().z) : []))));
+  VAL.index = parts.flat().map((r) => Object.fromEntries(m.columns.map((c, i) => [c, r[i]])));
+  return VAL.index;
+}
+function valueBlock(c, live) {
+  const v = c.v, g = v.graham, b = v.buffett, p = live ?? v.price;
+  const mos = (val) => (val && p ? (1 - p / val) * 100 : null);
+  const row = (name, val, how) => `<tr><td><b>${name}</b><div class="tiny">${esc(how)}</div></td><td class="num">${val ? "₹" + price(val) : "—"}</td><td class="num ${cls(mos(val))}">${val ? pct(mos(val)) : "—"}</td></tr>`;
+  const mid = v.value_mid, m = mos(mid);
+  const verdict = m == null ? "Not enough data to value" : m >= 30 ? "Price is well below value (margin of safety over 30%)" : m >= 10 ? "Price is below value" : m > -10 ? "Price is close to value" : "Price is above value";
+  const ck = (list, isG) => list.map((x) => { const ok = isG ? x.status === "pass" : x.pass, na = isG && !["pass", "fail", "partial"].includes(x.status);
+    return `<li><span class="pill ${na ? "na" : ok ? "good" : x.status === "partial" ? "na" : "bad"}">${na ? "n/a" : ok ? "pass" : isG ? esc(x.status) : "fail"}</span> ${esc(isG ? x.name : x.test)}: <span class="tiny">${esc(String((isG ? x.value : x.value) ?? "—"))}</span></li>`; }).join("");
+  return `<section class="verdict ${m == null ? "" : m >= 10 ? "positive" : m <= -10 ? "negative" : ""}"><div class="eyebrow">Investing: value by Graham and Buffett</div>
+      <p class="big" style="margin:0">${verdict}</p>
+      <p class="small" style="margin:4px 0 0">Price ₹${price(p)} · middle value ₹${mid ? price(mid) : "—"} · margin of safety ${m == null ? "—" : pct(m)}</p>
+      ${(v.flags || []).map((f) => `<p class="small" style="margin:6px 0 0"><b>Check:</b> ${esc(f)}</p>`).join("")}</section>
+    <section class="panel"><div class="scroll"><table><thead><tr><th>Method</th><th class="num">Value per share</th><th class="num">Margin of safety*</th></tr></thead><tbody>
+      ${row("Graham number", g.number, "√(22.5 × EPS × book value per share): the most a defensive investor should pay (P/E 15 × P/B 1.5)")}
+      ${row("Graham formula", g.formula, g.how.split("; ")[1] || g.how)}
+      ${row("Buffett: owner earnings value", b.value, b.how)}</tbody></table></div>
+      <p class="tiny">*Margin of safety = how far the price is below the value (negative: price above value). Inputs: ${Object.entries(v.inputs).map(([k, x]) => `${esc(k)} ${x ?? "—"}`).join(" · ")}. India 10-year government bond yield used as the bond rate.</p>
+      <div class="two">
+        <div><h3>Graham's defensive checks (${g.passed}/${g.of})</h3><ul class="small" style="padding-left:0;list-style:none">${ck(g.checks, true)}</ul></div>
+        <div><h3>Buffett's quality checks (${b.passed}/${b.of})</h3><ul class="small" style="padding-left:0;list-style:none">${ck(b.checks, false)}</ul></div></div>
+      <details class="sec"><summary>The numbers used (${c.years.length} years)</summary><div class="scroll"><table><thead><tr><th></th>${c.years.slice().reverse().map((y) => `<th class="num">${esc(y.period)}</th>`).join("")}</tr></thead><tbody>
+        ${[["Revenue ₹Cr", "revenue", 0], ["Net profit ₹Cr", "pat", 0], ["EPS ₹", "eps", 2], ["Book value per share ₹", "book_value_per_share", 2], ["Return on equity %", "roe_pct", 1], ["Net margin %", "net_margin_pct", 1], ["Operating cash flow ₹Cr", "cfo", 0], ["Investing cash flow ₹Cr", "cfi", 0], ["Current ratio", "current_ratio", 2], ["Liabilities ÷ equity", "liabilities_to_equity", 2]]
+          .map(([l, k, nd]) => `<tr><td>${l}</td>${c.years.slice().reverse().map((y) => `<td class="num">${fx(y[k], nd)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+        <p class="tiny">${esc(v.note)} Source: Upstox fundamentals (company statements), fetched ${when(c.fetched_at)}.</p></details></section>`;
+}
 async function renderStock(isin) {
   const s = S.byIsin[isin];
   if (!s) { app().innerHTML = `<section class="panel">That stock was not found. <a href="#market">Back to the market</a>.</section>`; return; }
-  const c = cur(s), st = (S.stats || {})[isin], ind = S.industries[s.ind] || S.industries.general, m = ind;
+  const c = cur(s);
   const vals = (S.charts.series || {})[isin];
   const series = vals ? S.charts.dates.map((d, i) => [d, vals[i]]).filter((x) => x[1] != null) : null;
-  const peers = S.stocks.filter((x) => x.ind === s.ind && x.i !== isin && (!s.sec || x.sec === s.sec || s.ind === "banks" || s.ind === "nbfc")).slice(0, 10);
-
-  // Summary (economy + price; company financials need the Upstox login, which a hosted page cannot hold)
-  const share = m.score.share_tailwinds;
-  const mood = share == null ? "unknown" : share >= 0.5 ? "supportive" : share >= 0.25 ? "mixed" : "unfavourable";
-  const tone = share == null ? "" : share >= 0.5 ? "positive" : share < 0.25 ? "negative" : "";
-  const reasons = [
-    `Economy: ${m.score.tailwinds} of ${m.score.judged} drivers for ${m.label} are tailwinds and ${m.score.headwinds} are headwinds.`,
-    ...m.drivers.filter((d) => d.verdict !== "neutral").slice(0, 2).map((d) => `${d.label}: ${d.latest_text} (${d.change_text || d.summary}) — ${d.verdict}.`),
-  ];
-  if (st && st.available) {
-    if (st.return_1y != null) reasons.push(`Share price ${pct(st.return_1y)} over 1 year and ${pct(st.from_high_pct)} from its 52-week high.`);
-    if (st.cagr_5y != null) reasons.push(`Over 5 years the share has grown ${pct(st.cagr_5y)} a year.`);
-  }
-  const risks = [];
-  m.drivers.filter((d) => d.verdict === "headwind").slice(0, 3).forEach((d) => risks.push(`${d.label} is working against this industry (${d.change_text || d.summary}).`));
-  if (st && st.from_high_pct != null && st.from_high_pct <= -30) risks.push(`The share is ${Math.abs(st.from_high_pct)}% below its 52-week high; find out why before buying.`);
-  if (st && st.avg_volume_3m != null && st.avg_volume_3m < 10000) risks.push("Thinly traded: it may be hard to buy or sell without moving the price.");
-  if (!s.t || s.t < 1e7) risks.push("Less than ₹1 crore traded in the last session: a small, illiquid stock.");
-
-  const lv = [["Macro-economic sector", s.ms, "NSE classification"], ["Sector", s.sec, "NSE index lists"], ["Industry", ind.label, "Portal industry map"], ["Basic industry", null, "needs Upstox login"]];
-  const statBox = (k, v) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`;
   app().innerHTML = `
     <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;align-items:flex-end">
-      <div><h1>${esc(s.n)}</h1><p class="sub">${esc(s.x.map((e) => `${e}`).join(" · "))}: ${esc(s.s)} · ISIN ${esc(s.i)}</p></div>
+      <div><h1>${esc(s.n)}</h1><p class="sub">${esc(s.x.join(" · "))}: ${esc(s.s)} · ISIN ${esc(s.i)}</p></div>
       <div style="text-align:right"><div class="num" style="font-size:24px;font-weight:500">₹${price(c.p)}</div>
-        <div class="num ${cls(c.ch)}">${pct(c.ch)}</div>
-        <div class="tiny">${c.live ? '<span class="live-dot"></span>' : ""}${esc(c.src || NA)} · ${when(c.at)}</div></div>
+        <div class="num ${cls(c.ch)}">${pct(c.ch)}</div><div class="tiny">${c.live ? '<span class="live-dot"></span>' : ""}${esc(c.src || NA)} · ${when(c.at)}</div></div>
     </div>
-    <section class="panel" id="scorecard"><p class="tiny">Loading fundamental scorecard…</p></section>
-    <section class="live-box" id="live"><div class="live-head"><div><h2>Live analysis</h2><p class="sub">Claude collects fresh prices, financials, the option chain, news and economy data, reads the company's annual report, presentations and con calls, answers your full framework and weighs everything together. Takes about 5–10 minutes. Analysis only; you decide.</p></div>
-      <button class="btn primary" id="analyse">Analyse now</button></div><div id="live-body"></div></section>
-    <div id="overall"></div>
-    ${candleSection(isin)}
-    <section class="panel"><h2>Price history</h2>
-      ${series ? `<div class="ranges" id="ranges">${[["1M", 31], ["6M", 183], ["1Y", 366], ["3Y", 1096], ["5Y", 1827]].map(([l, d]) => `<button class="btn ${view.range === d ? "on" : ""}" data-d="${d}">${l}</button>`).join("")}</div><div class="chart" id="chart"></div>` : `<p class="small">Price chart is kept for the 800 most traded stocks; not available for this one.</p>`}
-      ${st && st.available ? `<div class="grid stats" style="margin-top:10px">${statBox("52-week high", "₹" + price(st.high_52w))}${statBox("52-week low", "₹" + price(st.low_52w))}${statBox("From 52-week high", pct(st.from_high_pct))}${statBox("Avg daily volume (3 mo)", vol(st.avg_volume_3m))}${statBox("1 month", pct(st.return_1m))}${statBox("6 months", pct(st.return_6m))}${statBox("1 year", pct(st.return_1y))}${statBox("5 years, a year", pct(st.cagr_5y))}</div>` : ""}
-      <p class="src">Source: Upstox historical prices${st && st.as_of ? ` · daily closes up to ${when(st.as_of)}` : ""}. Last session: volume ${vol(s.v)}, traded ₹${cr(s.t)} Cr (${esc(s.src || NA)}, ${when(s.d)}).</p></section>
-    <section class="panel"><h2>Industry (detected automatically)</h2>
-      <ol class="levels">${lv.map(([k, v, src], i) => `<li><div class="tiny">${i + 1}. ${k}</div><div class="name">${esc(v || NA)}</div><div class="tiny">${esc(src)}</div></li>`).join("")}</ol>
-      <p class="small" style="margin:10px 0 0"><a href="#industry-${esc(ind.id)}">Open the ${esc(ind.label)} industry page →</a></p></section>
-    ${m.valuation_guide ? `<section class="panel"><h2>How to value a ${esc(m.label)} company</h2>${guideBlock(m.valuation_guide, true)}<p class="tiny">Press “Analyse now” above to work these methods out live for this company.</p></section>` : ""}
-    ${macroPanel(m, `Economy check: ${m.label}`)}
-    <section class="panel"><h2>Competitors</h2><p class="sub">Same industry and sector, most traded first.</p>${peersTable([s, ...peers], isin)}</section>
-    <section class="panel"><h2>Key risks</h2>${risks.length ? `<ul>${risks.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : `<p class="small">No specific red flags in the available data.</p>`}</section>
-    <section class="panel" id="fullcard"><p class="loading">Loading the full analysis…</p></section>
-    ${newsPanel((S.news || {})[isin], "News")}`;
-  liveReport(isin, s);
+    <div id="value"><p class="loading">Calculating value…</p></div>
+    <h2 style="margin-top:18px">Trading: chart</h2>
+    ${techStock(isin) ? candleSection(isin) : `<section class="panel">${series ? `<div class="ranges" id="ranges">${[["1M", 31], ["6M", 183], ["1Y", 366], ["3Y", 1096], ["5Y", 1827]].map(([l, d]) => `<button class="btn ${view.range === d ? "on" : ""}" data-d="${d}">${l}</button>`).join("")}</div><div class="chart" id="chart"></div><p class="tiny">Candlestick chart with levels and patterns is prepared for the 450 most traded stocks.</p>` : `<p class="small">No chart for this stock (thinly traded).</p>`}</section>`}`;
+  valueCard(isin).then((vc) => {
+    const el = document.getElementById("value"); if (!el || location.hash.slice(7) !== isin) return;
+    if (vc === undefined) { el.innerHTML = `<p class="notice">The value is read from this page's database: open the page on claude.ai while signed in.</p>`; return; }
+    el.innerHTML = vc ? valueBlock(vc, c.p) : `<section class="panel"><p class="small">No published statements for this company yet, so it cannot be valued (statements for every listed company are still being collected).</p></section>`;
+  });
   if (techStock(isin)) {
     drawCandles(isin);
     document.querySelectorAll("#cview .btn").forEach((b) => b.addEventListener("click", () => {
       candleView = b.dataset.v; document.querySelectorAll("#cview .btn").forEach((x) => x.classList.toggle("on", x === b)); drawCandles(isin);
     }));
-  }
-  Promise.all([loadNews(), fundCard(isin)]).then(([n, fc]) => {
-    const ov = document.getElementById("overall");
-    if (ov && location.hash.slice(7) === isin) ov.innerHTML = n && n.all && n.all[isin] ? overallBlock(n.all[isin], n, fc) : "";
-  });
-  fundCard(isin).then((fc) => {
-    const el = document.getElementById("fullcard"); if (!el || location.hash.slice(7) !== isin) return;
-    if (fc === undefined) { el.innerHTML = `<p class="tiny">The full analysis is read from this page's database: open the page on claude.ai while signed in.</p>`; return; }
-    el.innerHTML = fc ? fullCard(fc) : `<p class="small">No published statements for this company in the data feed (common for very small or newly listed companies).</p>`;
-    const sec = document.querySelector(".levels li:nth-child(4) .name"); if (sec && fc && fc.profile && fc.profile.sector) { sec.textContent = fc.profile.sector; sec.nextElementSibling.textContent = "Upstox company profile"; }
-  });
-  loadScores().then((sc) => {
-    const el = document.getElementById("scorecard"); if (!el || !sc) return;
-    const c = sc.cards.find((x) => x.isin === isin);
-    el.innerHTML = c ? `<h2>Fundamental scorecard (investing)</h2>${scoreTable([c], true)}<p class="tiny">Graham: ${(c.graham || []).map((g) => `${g.pass ? "✓" : "✗"} ${esc(g.test)}`).join(" · ")}. Updated ${ago(c.generated_at)}.</p>` : `<p class="tiny">No fundamental scorecard for this company yet (statements are still being collected for every listed company).</p>`;
-  });
-  if (series) {
+  } else if (series) {
     drawChart(series);
     document.querySelectorAll("#ranges .btn").forEach((b) => b.addEventListener("click", () => {
       view.range = +b.dataset.d; document.querySelectorAll("#ranges .btn").forEach((x) => x.classList.toggle("on", x === b)); drawChart(series);
@@ -1089,47 +1080,29 @@ function scoreTable(list, showIndustry) {
 
 const inv = { view: "all", industry: "", grade: "", nofin: false, q: "" };
 function renderInvesting() {
-  app().innerHTML = `<div><h1>Investing</h1><p class="sub">Long-term picks screened on fundamentals only: business quality, value, growth, ownership and the economic backdrop, plus Greenblatt's Magic Formula across all companies. Click a company and press “Analyse now” for the full framework report. Screening output, not investment advice.</p></div>
+  app().innerHTML = `<div><h1>Investing</h1><p class="sub">Every company valued by Graham's and Buffett's methods from its own statements, ranked by margin of safety (how far the price is below the value).</p></div>
     <section class="panel"><div class="controls">
-      <select id="iv-view" aria-label="View"><option value="all">Overall now (fundamentals + chart + news)</option><option value="mf">Magic Formula (Greenblatt)</option><option value="best">Top 3 in each industry</option><option value="graham">Passes most Graham tests</option></select>
-      <select id="iv-ind" aria-label="Industry"><option value="">All industries</option>${Object.values(S.industries).map((i) => `<option value="${esc(i.id.replace(/-/g, "_"))}">${esc(i.label)}</option>`).join("")}</select>
-      <select id="iv-grade" aria-label="Grade"><option value="">Any grade</option><option value="A">A only</option><option value="AB">A or B</option></select>
-      <label class="small"><input type="checkbox" id="iv-nofin"> Hide banks & lenders</label>
-      <input type="search" id="iv-q" placeholder="Search company" aria-label="Search"></div>
-      <div id="iv-body"><p class="loading">Loading scorecards…</p></div></section>`;
-  const sync = () => { inv.view = document.getElementById("iv-view").value; inv.industry = document.getElementById("iv-ind").value; inv.grade = document.getElementById("iv-grade").value; inv.nofin = document.getElementById("iv-nofin").checked; inv.q = document.getElementById("iv-q").value.trim().toLowerCase(); drawInvesting(); };
-  ["iv-view", "iv-ind", "iv-grade", "iv-nofin"].forEach((id) => document.getElementById(id).addEventListener("change", sync));
-  document.getElementById("iv-q").addEventListener("input", sync);
-  document.getElementById("iv-view").value = inv.view; document.getElementById("iv-ind").value = inv.industry; document.getElementById("iv-grade").value = inv.grade; document.getElementById("iv-nofin").checked = inv.nofin;
+      <select id="iv-q2" aria-label="Quality"><option value="4">Passes at least 4 of Buffett's quality checks</option><option value="3">At least 3</option><option value="0">All companies</option></select>
+      <select id="iv-liq" aria-label="Liquidity"><option value="1">₹1 crore+ traded a day</option><option value="0">Any</option></select>
+      <input type="search" id="iv-s" placeholder="Search company" aria-label="Search"></div>
+      <div id="iv-body"><p class="loading">Loading values…</p></div></section>`;
+  ["iv-q2", "iv-liq"].forEach((id) => document.getElementById(id).addEventListener("change", drawInvesting));
+  document.getElementById("iv-s").addEventListener("input", drawInvesting);
   drawInvesting();
 }
 async function drawInvesting() {
   const body = document.getElementById("iv-body"); if (!body) return;
-  const sc = await loadScores();
-  if (!sc) { body.innerHTML = `<p class="notice">Scorecards are read from this page's database: open the page on claude.ai while signed in.</p>`; return; }
-  if (!sc.cards.length) { body.innerHTML = `<p class="small">Scorecards are being built (the first run downloads financials for about 800 companies). Check back shortly.</p>`; return; }
-  let list = sc.cards.filter((c) => c.composite != null);
-  if (inv.industry) list = list.filter((c) => c.industry === inv.industry);
-  if (inv.grade === "A") list = list.filter((c) => c.grade === "A");
-  if (inv.grade === "AB") list = list.filter((c) => c.grade === "A" || c.grade === "B");
-  if (inv.nofin) list = list.filter((c) => c.industry !== "banks" && c.industry !== "nbfc");
-  if (inv.q) list = list.filter((c) => (c.symbol + " " + (c.name || "")).toLowerCase().includes(inv.q));
-  let html = "";
-  if (inv.view === "mf") {
-    list = list.filter((c) => c.magic_formula && c.magic_formula.rank).sort((a, b) => a.magic_formula.rank - b.magic_formula.rank);
-    html = `<p class="small">Greenblatt's method: rank every company on return on capital (ROCE) and on earnings yield (1 ÷ EV/EBITDA), add the two ranks, lowest total first. Banks, lenders and utilities are left out, as in the book. Greenblatt suggests holding a basket of 20–30 of these for a year, not picking one.</p>` + scoreTable(list.slice(0, 50), true);
-  } else if (inv.view === "best") {
-    const by = {}; list.sort((a, b) => b.composite - a.composite).forEach((c) => { (by[c.industry_label] = by[c.industry_label] || []).length < 3 && by[c.industry_label].push(c); });
-    html = Object.entries(by).sort().map(([k, v]) => `<h2 style="margin-top:12px">${esc(k)}</h2>${scoreTable(v, false)}`).join("");
-  } else if (inv.view === "graham") {
-    list = list.filter((c) => (c.graham || []).length >= 4).sort((a, b) => (b.graham.filter((x) => x.pass).length / b.graham.length) - (a.graham.filter((x) => x.pass).length / a.graham.length) || b.composite - a.composite);
-    html = `<p class="small">Companies passing the most of Graham's defensive-investor tests that the data allows (P/E ≤ 15, P/B ≤ 1.5 or P/E×P/B ≤ 22.5, current ratio ≥ 2, profit every year, adequate size).</p>` + scoreTable(list.slice(0, 50), true);
-  } else {
-    list.sort((a, b) => (b.overall ?? b.composite) - (a.overall ?? a.composite));
-    html = `<p class="small">Ranked on the overall picture now: fundamentals, the chart and today's news together.</p>` + scoreTable(list.slice(0, 100), true);
-  }
-  const meta = sc.meta || {};
-  body.innerHTML = html + `<p class="tiny">${esc(meta.method || "")} ${meta.generated_at ? "Scorecards updated " + ago(meta.generated_at) + "." : ""} ${esc(meta.label || "")}</p>`;
+  const idx = await valueIndex();
+  if (!idx) { body.innerHTML = `<p class="notice">Values are read from this page's database: open the page on claude.ai while signed in.</p>`; return; }
+  const minQ = +document.getElementById("iv-q2").value, liq = document.getElementById("iv-liq").value === "1", q = document.getElementById("iv-s").value.trim().toLowerCase();
+  let list = idx.filter((r) => r.margin_of_safety_pct != null && !r.flagged && r.graham_number && r.buffett_passed >= minQ && (!liq || r.turnover_cr >= 1) && (!q || (r.symbol + " " + r.name).toLowerCase().includes(q)));
+  list.sort((a, b) => b.margin_of_safety_pct - a.margin_of_safety_pct);
+  const m = VAL.meta;
+  body.innerHTML = `<div class="scroll"><table style="min-width:900px"><thead><tr><th class="num">#</th><th>Company</th><th class="num">Price</th><th class="num">Graham number</th><th class="num">Graham formula</th><th class="num">Buffett value</th><th class="num">Margin of safety</th><th class="num">Buffett checks</th><th class="num">Graham checks</th></tr></thead><tbody>${
+    list.slice(0, 200).map((r, i) => `<tr><td class="num">${i + 1}</td><td><div class="name"><a href="#stock-${esc(r.isin)}">${esc(r.symbol)}</a></div><div class="co">${esc(r.name || "")} · ${esc(r.industry || "")}</div></td>
+      <td class="num">₹${price(r.price)}</td><td class="num">${r.graham_number ? "₹" + price(r.graham_number) : "—"}</td><td class="num">${r.graham_formula ? "₹" + price(r.graham_formula) : "—"}</td><td class="num">${r.buffett_value ? "₹" + price(r.buffett_value) : "—"}</td>
+      <td class="num ${cls(r.margin_of_safety_pct)}"><b>${pct(r.margin_of_safety_pct)}</b></td><td class="num">${r.buffett_passed}/${r.buffett_of}</td><td class="num">${r.graham_passed}/${r.graham_of}</td></tr>`).join("")}</tbody></table></div>
+    <p class="tiny">${list.length} companies shown of ${idx.length} valued. Left out: companies with losses (no Graham value) and ${idx.filter((r) => r.flagged).length} whose P/E below 4 suggests one-off gains or figures from before a demerger (open them to see why). Margin of safety uses the middle of the three values. Bond rate: India 10-year government bond ${m.bond_yield}% (${esc(m.bond_yield_date || "")}). Prices as of the last close. Built ${ago(m.built_at)}. Not investment advice.</p>`;
 }
 
 // ---------- trading tab (F&O scan)

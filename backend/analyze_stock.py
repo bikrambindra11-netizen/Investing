@@ -196,6 +196,29 @@ def main() -> None:
     nifty = upstox_candles._fetch("NSE_INDEX|Nifty 50", jobs.today_ist(), None)
     links = correlations.analyse(candles, nifty, jobs.today_ist())
     rate = rating(parts)
+    # The site-wide scorecard (same method and grades as every company's stored analysis), so ratings never disagree
+    try:
+        from backend.score_universe import card as uni_card
+        from backend.app.market_data import build_rows
+        with SessionLocal() as s_:
+            rows_, _ = build_rows(s_)
+        row_ = next(r for r in rows_ if r["isin"] == isin)
+        raw_ = {k: v.get("data") for k, v in f.items() if isinstance(v, dict) and "data" in v}
+        shares_ = {iid: macro.industry_macro(iid)["score"]["share_tailwinds"] for iid in macro.load_industries()}
+        uc = uni_card(isin, row_, raw_, shares_)
+        w_ = {"quality": 0.35, "value": 0.25, "growth": 0.2, "ownership": 0.1, "economy": 0.1}
+        sc_ = {k: v for k, v in uc["scores"].items() if k in w_ and v is not None}
+        tot_ = sum(w_[k] for k in sc_)
+        comp_ = round(sum(w_[k] * sc_[k] for k in sc_) / tot_ * 100) if tot_ >= 0.6 else None
+        if comp_ is not None:
+            g_ = "A" if comp_ >= 75 else "B" if comp_ >= 62 else "C" if comp_ >= 50 else "D" if comp_ >= 38 else "E"
+            rate = {"score": comp_, "grade": g_, "label": {"A": "Strong", "B": "Good", "C": "Average", "D": "Weak", "E": "Poor"}[g_],
+                    "weights": {k: round(v * 100) for k, v in w_.items()},
+                    "parts": {k: {"score": v, "note": ""} for k, v in uc["scores"].items() if k in w_},
+                    "checks": parts,
+                    "note": "Same scorecard as the stored full analysis: quality 35% (ROE, ROCE, cash conversion, balance sheet, margins, profit record, Piotroski), value 25% (P/E, P/B, EV/EBITDA vs sector), growth 20%, ownership 10%, economy 10%. The universe-wide Magic Formula rank is added in the stored ranking. The final rating is Claude's judgement of the whole picture, which may move it by up to 15 points with reasons."}
+    except Exception as e:  # keep the simple scorecard if anything is missing
+        rate["note"] += f" (site-wide scorecard unavailable: {e})"
     pos = derivatives.positioning(primary.symbol, fno["lot_size"] if fno else None, tech, chain, jobs.today_ist())
     strikes = derivatives.strikes_that_matter(chain, tech, struct, pos) if fno else []
     fut = derivatives.futures_quote(primary.instrument_key, jobs.today_ist()) if fno else {"available": False}

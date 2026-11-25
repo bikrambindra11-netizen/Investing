@@ -23,6 +23,11 @@ def load_series() -> dict[str, dict]:
 
 
 @lru_cache
+@lru_cache(maxsize=1)
+def _overrides() -> dict[str, str]:
+    return yaml.safe_load((CONFIG / "industry_drivers.yaml").read_text()).get("name_overrides") or {}
+
+
 def load_industries() -> dict[str, dict]:
     return yaml.safe_load((CONFIG / "industry_drivers.yaml").read_text())["industries"]
 
@@ -189,12 +194,19 @@ def all_indicators() -> list[dict]:
 
 def resolve_industry(upstox_sector: str | None, name: str | None, nse_sector: str | None) -> str:
     inds = load_industries()
+    nm = f" {(name or '').lower()} "
+    # 1. Explicit name overrides (companies the generic sector names put in the wrong place)
+    for pat, iid in _overrides().items():
+        if pat in nm:
+            return iid
+    # 2. NSE sectors that are more precise than the data feed's (e.g. "Construction" covers both developers and contractors)
+    if nse_sector == "Realty":
+        return "realty"
     text = (upstox_sector or "").lower()
     if text:
         for iid, ind in inds.items():
             if any(w in text for w in ind.get("match", [])):
                 return iid
-    nm = f" {(name or '').lower()} "
     for iid, ind in inds.items():
         if any(w in nm for w in ind.get("name_match", [])):
             if nse_sector in (None, "Financial Services") or iid not in ("banks", "nbfc"):
