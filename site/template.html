@@ -461,15 +461,8 @@ function renderQuant(q, fw) {
   // Options & trade idea
   if (q.fno && q.fno.has_fno) {
     const oc = q.option_chain || {};
-    h += `<details class="sec" open><summary>Futures & options — trade idea</summary>`;
-    if (idea) {
-      const o = idea.option;
-      h += `<div class="idea ${idea.direction || ""}"><div class="name">${esc(idea.view)}</div>
-        ${o ? `<p>${esc(idea.plan)}</p><div class="grid kv">${kv("Option", `${esc(o.type)} ${o.strike} · ${esc(o.expiry)}`)}${kv("Premium", "₹" + price(o.premium))}${kv("Lot size", vol(o.lot_size))}${kv("Cost / max loss per lot", "₹" + price(o.cost_per_lot))}${kv("Break-even", "₹" + price(o.breakeven))}${kv("Delta / IV", `${o.delta ?? NA} / ${o.iv ?? NA}%`)}${kv("Time decay per day", o.theta_per_day != null ? "₹" + o.theta_per_day : NA)}${kv("Probability of profit", o.probability_of_profit != null ? o.probability_of_profit + "%" : NA)}</div>` : ""}
-        ${(idea.cautions || []).map((c) => `<p class="small down">${esc(c)}</p>`).join("")}
-        <div class="scroll"><table><thead><tr><th>Evidence</th><th class="num">Score (−1 to +1)</th><th>Note</th></tr></thead><tbody>${idea.evidence.map((e) => `<tr><td>${esc(e.factor)}</td><td class="num ${cls(e.score)}">${e.score}</td><td class="small">${esc(e.note)}</td></tr>`).join("")}</tbody></table></div>
-        <p class="tiny">${esc(idea.label)}</p></div>`;
-    }
+    h += `<details class="sec" open><summary>Futures & options — setup analysis</summary>`;
+    if (idea) h += setupBlock(idea);
     if (oc.available) {
       h += `<p class="small">${(oc.reading || []).map(esc).join(" ")} Max pain ₹${price(oc.max_pain)} · ATM implied volatility ${oc.atm_iv ?? NA}% · expiry ${esc(oc.expiry)}</p>
         <div class="scroll"><table style="min-width:560px"><thead><tr><th class="num">Call price</th><th class="num">Call OI</th><th class="num">Strike</th><th class="num">Put price</th><th class="num">Put OI</th></tr></thead><tbody>${(oc.strikes || []).map((r) => `<tr${r.strike === oc.atm_strike ? ' style="background:var(--soft)"' : ""}><td class="num">${price(r.ce_ltp)}</td><td class="num">${vol(r.ce_oi)}</td><td class="num"><b>${r.strike}</b></td><td class="num">${price(r.pe_ltp)}</td><td class="num">${vol(r.pe_oi)}</td></tr>`).join("")}</tbody></table></div>`;
@@ -509,6 +502,22 @@ function renderQuant(q, fw) {
   return h;
 }
 
+function setupBlock(idea) {
+  const L = idea.levels || {};
+  const lv = (a) => (a && a.length ? a.map((x) => "₹" + price(x)).join(", ") : NA);
+  return `<div class="idea ${idea.direction || ""}"><div class="name">${esc(idea.view)}</div>
+    ${idea.agree && idea.agree.length ? `<p class="small">Pointing the same way: ${esc(idea.agree.join(", "))}${idea.disagree && idea.disagree.length ? ` · pointing the other way: ${esc(idea.disagree.join(", "))}` : ""}.</p>` : ""}
+    <div class="grid kv">${kv("Support", lv(L.supports))}${kv("Resistance", lv(L.resistances))}
+      ${L.pivots ? kv("Pivot / R1 / S1", `${price(L.pivots.pivot)} / ${price(L.pivots.r1)} / ${price(L.pivots.s1)}`) : ""}
+      ${L.atr ? kv("Normal daily move (ATR)", `₹${price(L.atr)} (${L.atr_pct}%)`) : ""}
+      ${L.max_pain != null ? kv("Max pain", "₹" + price(L.max_pain)) : ""}
+      ${L.call_oi_wall != null ? kv("Most call OI / put OI", `₹${price(L.call_oi_wall)} / ₹${price(L.put_oi_wall)}`) : ""}</div>
+    ${(idea.scenarios || []).length ? `<p class="small" style="margin-bottom:0"><b>Scenarios</b></p><ul class="small">${idea.scenarios.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+    ${(idea.option_facts || []).length ? `<p class="small" style="margin-bottom:0"><b>Option data</b></p><ul class="small">${idea.option_facts.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+    <div class="scroll"><table><thead><tr><th>Evidence</th><th class="num">Score (−1 to +1)</th><th>Note</th></tr></thead><tbody>${idea.evidence.map((e) => `<tr><td>${esc(e.factor)}</td><td class="num ${cls(e.score)}">${e.score}</td><td class="small">${esc(e.note)}</td></tr>`).join("")}</tbody></table></div>
+    <p class="tiny">${esc(idea.label)}</p></div>`;
+}
+
 function renderFramework(fw) {
   let h = "";
   if (fw.management || fw.capital_allocation || fw.strategy) {
@@ -517,7 +526,7 @@ function renderFramework(fw) {
   for (const sec of fw.sections || []) {
     h += `<details class="sec" open><summary>${esc(sec.title)}</summary><div class="qa">${(sec.items || []).map((it) => `<div><div class="q">${esc(it.question)}</div><div class="a">${esc(it.answer)}</div>${(it.sources || []).length ? `<div class="s">${it.sources.map((x) => { const u = safeUrl(x.url); return u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(x.title || u)}</a>` : esc(x.title); }).join(" · ")}</div>` : ""}</div>`).join("")}</div></details>`;
   }
-  if (fw.trade_view) h += `<details class="sec" open><summary>Trading view</summary><p>${esc(fw.trade_view)}</p></details>`;
+  if (fw.trade_view) h += `<details class="sec" open><summary>Trading view (analysis, not a recommendation)</summary><p>${esc(fw.trade_view)}</p></details>`;
   h += `<p class="tiny" style="font-weight:600">Screening and research output only. Not investment advice.</p>`;
   return h;
 }
@@ -543,7 +552,7 @@ function drawTechChart(q) {
 
 // ---------- trading tab (F&O scan)
 function renderTrading() {
-  app().innerHTML = `<div><h1>Trading</h1><p class="sub">Scan all ${int.format(218)} stocks that have futures & options: chart signals, live prices, option chains and news, with an option trade idea where the evidence lines up.</p></div>
+  app().innerHTML = `<div><h1>Trading</h1><p class="sub">Scan all ${int.format(218)} stocks that have futures & options: chart signals, live prices, option chains and news. Ranks where the signals agree most and shows levels, scenarios and option data. You decide any positions.</p></div>
     <section class="live-box"><div class="live-head"><div><h2>F&O scan</h2><p class="sub">Runs live in about 3–5 minutes.</p></div><button class="btn primary" id="scan">Scan F&O now</button></div><div id="scan-body"></div></section>`;
   const btn = document.getElementById("scan"), body = document.getElementById("scan-body");
   btn.addEventListener("click", () => startJob("scans/latest", "SCAN", btn, body));
@@ -557,11 +566,8 @@ function renderTrading() {
     const sc = d.scan;
     if (sc) {
       h += `<p class="small">Scanned ${sc.scanned} stocks ${ago(sc.generated_at)}. ${d.commentary ? esc(d.commentary) : ""}</p>`;
-      h += sc.ideas.map((x) => { const o = x.idea.option; return `<div class="idea ${x.idea.direction}"><div class="name"><a href="#stock-${esc(x.isin)}">${esc(x.symbol)}</a> ₹${price(x.price)} — ${esc(x.idea.view)} <span class="tiny">score ${x.idea.score}</span></div>
-        <p class="small">${esc(x.idea.plan)}</p>
-        <p class="tiny">RSI ${x.rsi ?? NA} · support ${x.supports.map(price).join(", ") || NA} · resistance ${x.resistances.map(price).join(", ") || NA} · PCR ${x.option_chain.pcr ?? NA} · IV ${x.option_chain.atm_iv ?? NA}%</p>
-        <ul class="tiny">${x.signals.slice(0, 3).map((t) => `<li>${esc(t)}</li>`).join("")}${(x.idea.cautions || []).map((c) => `<li class="down">${esc(c)}</li>`).join("")}</ul>
-        ${(x.headlines || []).length ? `<p class="tiny">News: ${x.headlines.map((n) => `<span class="pill ${esc(n.sentiment)}">${esc(n.sentiment)}</span> ${esc(n.title)}`).join(" · ")}</p>` : ""}</div>`; }).join("") || `<p>No setups where the evidence lines up right now.</p>`;
+      h += sc.ideas.map((x) => `<div><div class="name" style="margin:6px 0 4px"><a href="#stock-${esc(x.isin)}">${esc(x.symbol)}</a> ₹${price(x.price)} <span class="tiny">RSI ${x.rsi ?? NA} · strength ${Math.abs(x.idea.score)}</span></div>${setupBlock(x.idea)}
+        ${(x.headlines || []).length ? `<p class="tiny">News: ${x.headlines.map((n) => `<span class="pill ${esc(n.sentiment)}">${esc(n.sentiment)}</span> ${esc(n.title)}`).join(" · ")}</p>` : ""}</div>`).join("") || `<p>No stocks where the signals clearly agree right now.</p>`;
       h += `<details class="sec"><summary>All F&O stocks by chart signal</summary><div class="scroll"><table><thead><tr><th>Stock</th><th class="num">Price</th><th>Bias</th><th class="num">Score</th><th class="num">RSI</th></tr></thead><tbody>${sc.overview.map((x) => `<tr><td><a href="#stock-${esc(x.isin)}">${esc(x.symbol)}</a></td><td class="num">${price(x.price)}</td><td><span class="pill ${x.bias === "bullish" ? "good" : x.bias === "bearish" ? "bad" : "na"}">${esc(x.bias)}</span></td><td class="num">${x.score}</td><td class="num">${x.rsi ?? NA}</td></tr>`).join("")}</tbody></table></div></details>
         <p class="tiny" style="font-weight:600">${esc(sc.label)}</p>`;
     }

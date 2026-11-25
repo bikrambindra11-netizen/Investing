@@ -1,8 +1,8 @@
-"""Scan every stock that has futures & options for trade setups right now.
+"""Scan every stock that has futures & options and rank where the signals agree most, right now.
 
 Usage: python -m backend.scan_fno OUT.json
 For each F&O stock: chart (technicals), live price, option chain, and key ratios. The strongest
-setups get a news check and a full trade idea.
+setups get a news check and a setup view (levels, scenarios, option data). No positions are suggested.
 """
 import json
 import os
@@ -57,19 +57,19 @@ def main() -> None:
 
     with ThreadPoolExecutor(4) as ex:
         results = list(ex.map(full, shortlist))
-    ideas = [r for r in results if r["idea"].get("option")]
+    ideas = [r for r in results if r["idea"]["lean"] != "no clear edge"]
     ideas.sort(key=lambda r: -abs(r["idea"]["score"]))
     overview = [{"symbol": uni[k]["symbol"], "isin": k.split("|")[-1], "price": prices.get(k), "bias": techs[k]["bias"],
                  "score": techs[k]["score"], "rsi": techs[k]["rsi14"]} for k in ranked]
     result = {"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "universe": len(keys),
-              "scanned": len(ranked), "ideas": ideas[:15], "no_edge": [r["symbol"] for r in results if not r["idea"].get("option")],
+              "scanned": len(ranked), "ideas": ideas[:15], "no_edge": [r["symbol"] for r in results if r["idea"]["lean"] == "no clear edge"],
               "overview": overview,
-              "label": "Trade ideas from rules, not advice. Options can lose 100% of the premium."}
+              "label": "Analysis only, not recommendations. You decide any positions yourself."}
     with open(out_path, "w") as fh:
         json.dump(result, fh, default=str)
     with open(out_path + ".db.json", "w") as fh:  # fields for the page's scans/latest document
         json.dump({"status": "done", "step": "", "updated_at": result["generated_at"], "scan": result}, fh, default=str)
-    print(f"wrote {out_path}: {len(ranked)} stocks scanned, {len(ideas)} with a trade idea, "
+    print(f"wrote {out_path}: {len(ranked)} stocks scanned, {len(ideas)} with a clear lean, "
           f"{os.path.getsize(out_path) // 1024} KB")
 
 

@@ -79,13 +79,13 @@ def pick_expiry(expiries: list[str], today: date, min_days: int = 10) -> str | N
 
 def trade_idea(symbol: str, lot: int, tech: dict, chain: dict, news_score: float, fund_grade: str | None,
                macro_share: float | None) -> dict:
-    """Combine the chart, the option chain, news and fundamentals into one view and, when the evidence
-    lines up, a defined-risk option buy (call for up, put for down). Never a naked option sale."""
+    """A setup view: how the chart, the option chain, news, fundamentals and the economy line up, with
+    the key levels and scenarios. It describes the situation; it does not pick a position."""
     parts = []
     t = tech.get("score", 0) if tech.get("available") else 0
     parts.append(("Chart", t, tech.get("summary", "not available")))
-    o = 0.0
     if chain.get("available"):
+        o = 0.0
         if chain["pcr"] is not None:
             o += 0.5 if chain["pcr"] > 1.2 else -0.5 if chain["pcr"] < 0.7 else 0
         if chain["put_oi_change"] > max(chain["call_oi_change"], 0):
@@ -93,61 +93,46 @@ def trade_idea(symbol: str, lot: int, tech: dict, chain: dict, news_score: float
         elif chain["call_oi_change"] > max(chain["put_oi_change"], 0):
             o -= 0.5
         parts.append(("Option chain", o, " ".join(chain["reading"][:1])))
-    parts.append(("News", news_score, "news tone over recent headlines"))
+    parts.append(("News", news_score, "tone of recent headlines"))
     f = {"A": 0.6, "B": 0.3, "C": 0, "D": -0.3, "E": -0.6}.get(fund_grade or "", 0)
-    parts.append(("Fundamentals", f, f"rating {fund_grade}" if fund_grade else "not rated"))
+    parts.append(("Fundamentals", f, f"rating {fund_grade}" if fund_grade else "not rated in this view"))
     m = 0 if macro_share is None else (macro_share - 0.5)
     parts.append(("Economy", m, "share of industry drivers that are tailwinds"))
     weights = {"Chart": 0.4, "Option chain": 0.2, "News": 0.15, "Fundamentals": 0.15, "Economy": 0.1}
     score = sum(weights[n] * v for n, v, _ in parts) / sum(weights[n] for n, _, _ in parts)
-    direction = "up" if score >= 0.2 else "down" if score <= -0.2 else None
-    out = {"score": round(score, 2), "direction": direction,
-           "evidence": [{"factor": n, "score": round(v, 2), "note": note} for n, v, note in parts],
-           "label": "Trade idea from rules, not advice. Options can lose 100% of the premium; size positions so a full loss is affordable."}
-    if not direction:
-        out["view"] = "No clear edge: the chart, option chain, news and fundamentals do not agree. Best to wait."
-        return out
-    if not chain.get("available"):
-        out["view"] = f"Leaning {direction}, but no option chain is available for {symbol}."
-        return out
-    spot, rows = chain["spot"], chain["rows"]
-    want_call = direction == "up"
-    side, g = ("ce", "ce_g") if want_call else ("pe", "pe_g")
-    # Strike: at the money or one strike in the direction of the move, with delta about 0.4-0.6
-    cands = [r for r in rows if r[side].get("ltp") and abs(r[g].get("delta") or 0) >= 0.35]
-    cands = [r for r in cands if (r["strike"] >= spot * 0.98 if want_call else r["strike"] <= spot * 1.02)]
-    if not cands:
-        out["view"] = f"Leaning {direction}, but no liquid option strike found."
-        return out
-    best = min(cands, key=lambda r: abs(abs(r[g].get("delta") or 0) - 0.5))
-    prem = best[side]["ltp"]
-    sup = (tech.get("supports") or [{}])[0].get("level") if tech.get("available") else None
-    res = (tech.get("resistances") or [{}])[0].get("level") if tech.get("available") else None
-    target_u = res if want_call else sup
-    stop_u = sup if want_call else res
-    be = best["strike"] + prem if want_call else best["strike"] - prem
-    iv = best[g].get("iv")
-    cost = round(prem * lot, 2)
-    notes = []
-    if iv and chain.get("atm_iv") and iv > 45:
-        notes.append(f"Implied volatility is high ({iv}%): options are expensive and can lose value even if the stock moves your way.")
-    if target_u and ((want_call and target_u < be) or (not want_call and target_u > be)):
-        notes.append("The nearest chart target is short of the break-even price: the reward may not justify the premium.")
-    out.update({
-        "view": f"Leaning {'bullish' if want_call else 'bearish'} on {symbol}.",
-        "option": {"type": "CALL (CE)" if want_call else "PUT (PE)", "strike": best["strike"], "expiry": chain["expiry"],
-                   "premium": prem, "lot_size": lot, "cost_per_lot": cost, "max_loss_per_lot": cost,
-                   "breakeven": round(be, 2), "delta": best[g].get("delta"), "iv": iv, "theta_per_day": best[g].get("theta"),
-                   "probability_of_profit": best[g].get("pop"), "open_interest": best[side].get("oi"),
-                   "instrument_key": best[f"{side}_key"]},
-        "underlying_target": target_u, "underlying_stop": stop_u,
-        "plan": (f"Buy 1 lot of the {best['strike']:g} {'call' if want_call else 'put'} expiring {chain['expiry']} at about ₹{prem}. "
-                 f"Cost and maximum loss ₹{cost:,.0f} per lot. Break-even ₹{be:,.2f} at expiry. "
-                 + (f"Exit if {symbol} closes {'below' if want_call else 'above'} ₹{stop_u:,.2f}; " if stop_u else "")
-                 + (f"first target ₹{target_u:,.2f} for the stock." if target_u else "")),
-        "cautions": notes,
-    })
-    return out
+    lean = "bullish" if score >= 0.2 else "bearish" if score <= -0.2 else "no clear edge"
+    agree = [n for n, v, _ in parts if (v > 0.1 and score > 0) or (v < -0.1 and score < 0)]
+    disagree = [n for n, v, _ in parts if (v > 0.1 and score < 0) or (v < -0.1 and score > 0)]
+
+    sup = [l["level"] for l in (tech.get("supports") or [])] if tech.get("available") else []
+    res = [l["level"] for l in (tech.get("resistances") or [])] if tech.get("available") else []
+    levels = {"supports": sup, "resistances": res,
+              "pivots": tech.get("pivots") if tech.get("available") else None,
+              "atr": tech.get("atr14"), "atr_pct": tech.get("atr_pct")}
+    if chain.get("available"):
+        levels.update({"max_pain": chain["max_pain"], "call_oi_wall": chain["call_wall"], "put_oi_wall": chain["put_wall"]})
+    scenarios = []
+    if sup:
+        scenarios.append(f"If {symbol} holds above support ₹{sup[0]:,.2f}, the setup stays intact; a close below it would weaken the picture"
+                         + (f", with the next support near ₹{sup[1]:,.2f}." if len(sup) > 1 else "."))
+    if res:
+        scenarios.append(f"Resistance is at ₹{res[0]:,.2f}; a close above it on good volume would be a breakout"
+                         + (f", with the next resistance near ₹{res[1]:,.2f}." if len(res) > 1 else "."))
+    if tech.get("atr14"):
+        scenarios.append(f"A normal day's move is about ₹{tech['atr14']:,.2f} ({tech['atr_pct']}%): moves smaller than that are noise.")
+    option_facts = []
+    if chain.get("available"):
+        option_facts = list(chain["reading"]) + [
+            f"At-the-money implied volatility {chain['atm_iv']}%" + (" — high, so options are expensive." if (chain["atm_iv"] or 0) > 40 else "."),
+            f"Max pain ₹{chain['max_pain']:,.0f}: the price where option buyers as a group lose most at expiry ({chain['expiry']}).",
+            f"Lot size {lot:,} shares." if lot else ""]
+        option_facts = [x for x in option_facts if x]
+    return {"score": round(score, 2), "lean": lean, "direction": "up" if lean == "bullish" else "down" if lean == "bearish" else None,
+            "view": f"{symbol}: signals lean {lean}." if lean != "no clear edge" else f"{symbol}: no clear edge; the signals disagree.",
+            "agree": agree, "disagree": disagree,
+            "evidence": [{"factor": n, "score": round(v, 2), "note": note} for n, v, note in parts],
+            "levels": levels, "scenarios": scenarios, "option_facts": option_facts,
+            "label": "Analysis only, not a recommendation. Decide positions and sizes yourself."}
 
 
 def news_score(items: list[dict]) -> float:
