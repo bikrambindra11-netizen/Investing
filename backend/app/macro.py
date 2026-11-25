@@ -39,9 +39,9 @@ def _store(series_id: str, points: list[tuple[str, float]], replace: bool = True
     return len(points)
 
 
-def refresh_macro(today: date) -> dict[str, str]:
-    """Download every configured series. Returns {series_id: 'ok: n points' | 'error: ...'}."""
-    cfg = load_series()
+def refresh_macro(today: date, only: set[str] | None = None) -> dict[str, str]:
+    """Download every configured series (or just `only`). Returns {series_id: 'ok: n points' | 'error: ...'}."""
+    cfg = {k: v for k, v in load_series().items() if only is None or k in only}
     result: dict[str, str] = {}
     years = [today.year - 2, today.year - 1, today.year]
     cache: dict[str, object] = {}
