@@ -62,9 +62,7 @@ def read_chain(chain: list[dict]) -> dict:
         reading.append(f"Put/call open-interest ratio {pcr}.")
     reading.append(f"Most call open interest at the ₹{call_wall['strike']:g} strike; most put open interest at ₹{put_wall['strike']:g}.")
     if call_doi or put_doi:
-        reading.append(f"Today's change in open interest: calls {call_doi:+,.0f}, puts {put_doi:+,.0f}" +
-                       (" — put writing, a bullish sign." if put_doi > call_doi > 0 or (put_doi > 0 >= call_doi) else
-                        " — call writing, a bearish sign." if call_doi > put_doi > 0 or (call_doi > 0 >= put_doi) else "."))
+        reading.append(f"Change in open interest since the previous day: calls {call_doi:+,.0f}, puts {put_doi:+,.0f}.")
     return {"available": True, "spot": spot, "expiry": chain[0]["expiry"], "pcr": pcr, "max_pain": min(pain)[1],
             "atm_strike": atm["strike"], "atm_iv": round(sum(ivs) / len(ivs), 1) if ivs else None,
             "call_wall": call_wall["strike"], "put_wall": put_wall["strike"],
