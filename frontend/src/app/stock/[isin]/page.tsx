@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { MacroPanel } from "@/components/MacroPanel";
 import { NewsList } from "@/components/NewsList";
 import { PeersTable } from "@/components/PeersTable";
-import { PriceChart } from "@/components/PriceChart";
+import { MultiTimeframe, TradingChart } from "@/components/TradingChart";
 import { Badge, ErrorBox, Loading, Section, Source, Stat, cr, fmtDate, num, pctTxt } from "@/components/ui";
 import { API_BASE, fmtInt, fmtPct, fmtPrice, getJSON, pct, pctColor } from "@/lib/api";
 import type { StockPage } from "@/lib/types";
@@ -76,8 +76,15 @@ export default function StockPageView() {
       </section>
 
       {/* Price */}
-      <Section title="Price">
-        <PriceChart candles={d.candles} />
+      <Section title="Chart" subtitle="Real candles on every timeframe with support/resistance, Fibonacci, trend lines, candle patterns and indicators marked. Switch timeframe and overlays above the chart.">
+        <TradingChart instrumentKey={d.info.key} symbol={d.info.symbol} />
+      </Section>
+
+      <Section title="All timeframes at a glance">
+        <MultiTimeframe instrumentKey={d.info.key} />
+      </Section>
+
+      <Section title="Price statistics">
         {s.available ? (
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
             <Stat label="52-week high" value={`₹${fmtPrice(s.high_52w ?? null)}`} />

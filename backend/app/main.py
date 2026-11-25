@@ -211,3 +211,19 @@ def industry(industry_id: str) -> dict:
 @app.get("/api/macro")
 def macro_dashboard() -> dict:
     return {"indicators": macro.all_indicators(), "status": jobs.job_status.get("macro")}
+
+
+# ------------------------------------------------------------------ multi-timeframe charts
+
+@app.get("/api/chart")
+def chart_data(key: str, tf: str = "1D", bars: int | None = None) -> dict:
+    from . import charts
+    if tf not in charts.TIMEFRAMES:
+        raise HTTPException(400, f"Unknown timeframe {tf}. Use one of {', '.join(charts.TIMEFRAMES)}.")
+    return charts.chart(key, tf, bars)
+
+
+@app.get("/api/mtf")
+def multi_timeframe(key: str) -> list[dict]:
+    from . import charts
+    return charts.multi_timeframe(key)
