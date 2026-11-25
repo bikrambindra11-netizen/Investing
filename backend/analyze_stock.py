@@ -206,7 +206,11 @@ def main() -> None:
     from backend.sources import nse_delivery, nse_sectors
     prom = next((x for x in (page["shareholding"] or {}).get("rows", []) if x["key"] == "promoters"), None)
     prom_pct = prom["values"][0]["pct"] if prom and prom["values"] else None
+    from backend.app import valuation_methods
+    q_rows = analysis._table(((f.get("income_q") or {}).get("data") or {}).get("income_statement"), "category") if f else {}
+    quarterly = {k: [{"period": p, "value": v} for p, v in sorted(vv.items(), key=lambda kv: analysis.period_end(kv[0]) or 0, reverse=True)][:4] for k, vv in q_rows.items()}
     extras = {"dcf": analysis.dcf(industry, fin, kr, price) if fin else {"available": False, "reason": "No financials."},
+              "valuation_methods": valuation_methods.assess(industry, fin, kr, price, candles, quarterly) if fin else None,
               "delivery": nse_delivery.summary(primary.symbol, nse_delivery.recent(jobs.today_ist(), 5)),
               "indices": nse_sectors.index_membership().get(isin, []),
               "free_float_pct": round(100 - prom_pct, 2) if prom_pct is not None else None}

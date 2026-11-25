@@ -3,7 +3,7 @@ final screening summary. Every number carries its source and period. Missing dat
 "not available", never estimated."""
 from datetime import date
 
-FINANCIAL_INDUSTRIES = {"banks", "nbfc"}
+FINANCIAL_INDUSTRIES = {"banks", "nbfc", "insurance"}
 CAPITAL_HEAVY = {"metals", "power", "oil_gas", "cement", "capital_goods", "realty"}
 GRAHAM_MIN_REVENUE_CR = 1000  # "adequate size": annual revenue of at least ₹1,000 crore
 
@@ -255,12 +255,20 @@ def history_multiples(fin: dict, candles: list[dict]) -> list[dict]:
 def valuation(industry: str, f: dict, fin: dict, candles: list[dict], price: float | None) -> dict:
     kr = key_ratios(f)
     hist = history_multiples(fin, candles)
-    if industry in FINANCIAL_INDUSTRIES:
-        chosen, why = ["P/B", "P/E"], "For lenders, book value (P/B) matters most, then earnings."
-    elif industry in CAPITAL_HEAVY:
-        chosen, why = ["EV/EBITDA", "P/B"], "Capital-heavy businesses are best compared on EV/EBITDA and book value."
-    else:
-        chosen, why = ["P/E", "EV/EBITDA"], "Earnings-driven businesses are best compared on P/E and EV/EBITDA."
+    from .valuation_methods import guide  # the industry's methods (config/valuation_methods.yaml)
+    g = guide(industry)
+    to_ratio = {"pb_roe": "P/B", "residual_income": "P/B", "pb_history": "P/B", "p_ev": "P/B", "p_nav": "P/B",
+                "mid_cycle_ev_ebitda": "EV/EBITDA", "ev_replacement": "EV/EBITDA", "sotp": "EV/EBITDA"}
+    chosen = []
+    for m in g["primary"] + g["secondary"]:
+        r = to_ratio.get(m["id"], "P/E")
+        if r not in chosen:
+            chosen.append(r)
+    for r in ("P/E", "EV/EBITDA", "P/B"):
+        if len(chosen) < 2 and r not in chosen:
+            chosen.append(r)
+    chosen = chosen[:2]
+    why = f"{g['kind']}: compared on {' and '.join(chosen)}. {g['why']}"
 
     metrics = []
     for m in chosen:

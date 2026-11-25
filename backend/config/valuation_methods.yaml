@@ -1,0 +1,236 @@
+# How to value each industry: the methods that suit it, the ones that mislead, and why.
+# Edit freely. Method ids are computed in backend/app/valuation_methods.py:
+#   pb_roe            P/B against return on equity (justified P/B = (ROE - g) / (cost of equity - g))
+#   residual_income   book value + present value of profits earned above the cost of equity
+#   dcf_earnings      discounted cash flow on earnings (cash to shareholders = profit x (1 - growth / ROE))
+#   reverse_dcf       the profit growth today's price already assumes
+#   pe_growth         P/E against profit growth (Lynch)
+#   normalised_pe     price / average EPS across the cycle (Graham & Dodd)
+#   mid_cycle_ev_ebitda  enterprise value / average operating profit across the cycle
+#   pb_history        P/B against the company's own history (asset value)
+#   p_sales           market value / revenue (for loss-making companies)
+#   ev_replacement    enterprise value / cost of building the same capacity today (needs capacity from the annual report)
+#   p_ev              price / embedded value (insurers; needs embedded value from the investor presentation)
+#   p_nav             price / net asset value of land and projects (real estate; needs NAV)
+#   sotp              sum of the parts (conglomerates; each business valued on its own method)
+#
+# cyclical: true -> the cycle is identified first (margins vs history, earnings vs average,
+# the commodity prices listed in cycle_signals) and the methods use cycle-average numbers.
+
+sources:
+  damodaran_iv: "Aswath Damodaran, Investment Valuation (3rd ed., Wiley 2012): financial service firms, real estate, multiples"
+  damodaran_dark: "Aswath Damodaran, The Dark Side of Valuation (2nd ed., 2010): cyclical and commodity companies, young and loss-making firms"
+  mckinsey: "Koller, Goedhart & Wessels (McKinsey), Valuation: Measuring and Managing the Value of Companies (7th ed., 2020): banks, cyclical companies, multiples"
+  lynch: "Peter Lynch, One Up on Wall Street (1989): the six kinds of company, cyclicals, P/E against growth"
+  graham_dodd: "Benjamin Graham & David Dodd, Security Analysis (1934): value on average earnings over several years, not one year"
+  graham_ii: "Benjamin Graham, The Intelligent Investor (rev. 1973), ch. 14: P/E on 3-year average earnings, P/B, P/E x P/B"
+  greenwald: "Bruce Greenwald et al., Value Investing: From Graham to Buffett and Beyond (2001): asset value at reproduction cost, earnings power value"
+  chancellor: "Edward Chancellor (ed.), Capital Returns: Investing Through the Capital Cycle (Marathon Asset Management, 2015): high returns attract new capacity, which ends the upturn"
+  marks: "Howard Marks, Mastering the Market Cycle (2018): know where you are in the cycle"
+  mauboussin: "Michael Mauboussin & Alfred Rappaport, Expectations Investing (2001, rev. 2021): read the expectations in the price (reverse DCF)"
+  buffett: "Warren Buffett, Berkshire Hathaway shareholder letter 1986: owner earnings"
+  mukherjea: "Saurabh Mukherjea et al., Coffee Can Investing (2018): consistent compounders, ROCE and revenue growth year after year"
+  asi_iev: "Actuarial Society of India, APS 10: Indian Embedded Value for life insurers"
+
+industries:
+  banks:
+    kind: Lender (financial)
+    cyclical: false
+    primary: [pb_roe, residual_income]
+    secondary: [normalised_pe]
+    avoid:
+      - {method: "EV/EBITDA and cash-flow DCF", why: "A bank's debt (deposits) is its raw material, not financing, so enterprise value and free cash flow have no meaning."}
+      - {method: "P/E on its own", why: "Profits swing with bad-loan provisions; one good or bad year makes P/E misleading."}
+    why: "A bank is worth its book value adjusted for how much it earns on it. A bank earning a return on equity above its cost of equity deserves more than book; one below deserves less. Check that book is real: subtract net bad loans (P/ABV) from the annual report."
+    watch: ["Net NPA and provision coverage (adjusted book)", "Net interest margin", "Credit cost", "CASA ratio", "Capital adequacy (CET1)"]
+    sources: [damodaran_iv, mckinsey, graham_ii]
+  nbfc:
+    kind: Lender (financial)
+    cyclical: false
+    primary: [pb_roe, residual_income]
+    secondary: [normalised_pe]
+    avoid:
+      - {method: "EV/EBITDA and cash-flow DCF", why: "Borrowing is the business itself, so enterprise value and free cash flow mean nothing."}
+    why: "Like banks: value on book and on return on equity. NBFCs borrow at higher cost and rely on markets for funds, so check funding cost and asset quality before trusting book value."
+    watch: ["Gross and net stage-3 assets", "Cost of funds vs yield", "Asset-liability maturity match", "Capital adequacy"]
+    sources: [damodaran_iv, mckinsey]
+  insurance:
+    kind: Insurer (financial)
+    cyclical: false
+    primary: [p_ev, pb_roe]
+    secondary: [normalised_pe]
+    avoid:
+      - {method: "P/E", why: "Life insurers book the cost of new policies upfront but earn over many years, so accounting profit understates value; fast growth even lowers reported profit."}
+      - {method: "EV/EBITDA", why: "Insurer liabilities are policyholder money, not debt."}
+    why: "Life insurers: price against embedded value (the value of the policies already sold plus net worth) and the growth in value of new business (VNB margin). General insurers: P/B against return on equity, after checking the combined ratio."
+    watch: ["Embedded value and its growth", "VNB margin", "Persistency (13th and 61st month)", "Combined ratio (general insurers)", "Solvency ratio"]
+    sources: [asi_iev, damodaran_iv]
+  capital_markets:
+    kind: Market-linked financial (asset light)
+    cyclical: true
+    cycle_signals: []
+    primary: [normalised_pe, dcf_earnings]
+    secondary: [reverse_dcf]
+    avoid:
+      - {method: "P/B", why: "Asset managers and exchanges need almost no capital; book value says little about what they earn."}
+    why: "Fees rise and fall with markets (assets managed, trading volumes), so profits are partly cyclical: use P/E on average earnings across good and bad market years, and a DCF for the long-run franchise."
+    watch: ["Assets under management and SIP flows (AMFI)", "Yield on AUM", "Market share of trading volumes"]
+    sources: [damodaran_dark, lynch, graham_dodd]
+  it:
+    kind: Steady grower (asset light)
+    cyclical: false
+    primary: [dcf_earnings, pe_growth]
+    secondary: [reverse_dcf]
+    avoid:
+      - {method: "P/B and replacement cost", why: "The assets are people and client relationships, which are not on the balance sheet."}
+    why: "IT services firms turn most of their profit into cash and grow steadily, so a DCF works, and P/E should be read against profit growth. Reverse DCF shows how much growth the price already assumes."
+    watch: ["Deal wins and order book (TCV)", "Revenue growth in constant currency", "Operating margin", "Attrition"]
+    sources: [mckinsey, lynch, mauboussin, mukherjea]
+  fmcg:
+    kind: Consumer franchise (steady grower)
+    cyclical: false
+    primary: [dcf_earnings, reverse_dcf]
+    secondary: [pe_growth]
+    avoid:
+      - {method: "P/B", why: "Brand value is not on the balance sheet, and returns on capital are very high, so P/B looks absurdly high for the best companies."}
+    why: "Strong brands earn high returns for decades, so value comes from long-run cash flows (DCF, Buffett's owner earnings). Because these stocks often look 'expensive' on P/E, a reverse DCF shows what growth the price needs."
+    watch: ["Volume growth (not just price increases)", "Gross margin vs raw material costs", "Rural vs urban demand", "Distribution reach"]
+    sources: [buffett, mukherjea, mauboussin, mckinsey]
+  pharma:
+    kind: Grower with product cycles
+    cyclical: false
+    primary: [pe_growth, dcf_earnings]
+    secondary: [mid_cycle_ev_ebitda]
+    avoid:
+      - {method: "P/B", why: "Research, approvals and brands are not on the balance sheet."}
+    why: "Value rests on products and approvals: read P/E against growth and a DCF, and check one-off US product gains, which can inflate one or two years."
+    watch: ["US generics pipeline and price erosion", "FDA inspection status", "Domestic formulation growth", "R&D spend"]
+    sources: [mckinsey, lynch, damodaran_iv]
+  consumer_durables:
+    kind: Consumer grower
+    cyclical: false
+    primary: [pe_growth, dcf_earnings]
+    secondary: [reverse_dcf]
+    avoid:
+      - {method: "P/B", why: "Brands and distribution matter more than assets."}
+    why: "Branded durables grow with incomes and housing: P/E against growth, and DCF for the long-run brand."
+    watch: ["Market share", "Raw material costs (copper, steel, plastics)", "Housing and wedding season demand"]
+    sources: [lynch, mckinsey, mukherjea]
+  auto:
+    kind: Cyclical (consumer and freight cycle)
+    cyclical: true
+    cycle_signals: [brent, aluminium, iron_ore]
+    primary: [normalised_pe, mid_cycle_ev_ebitda]
+    secondary: [dcf_earnings]
+    avoid:
+      - {method: "P/E on peak earnings", why: "Vehicle sales move in cycles; a low P/E at the top of the cycle is a trap (Lynch)."}
+    why: "Vehicle demand rises and falls with incomes, rates and freight. Value on earnings averaged across the cycle, not this year's."
+    watch: ["Monthly volumes (SIAM)", "Inventory at dealers", "Commodity costs", "EV transition"]
+    sources: [lynch, damodaran_dark, graham_dodd]
+  cement:
+    kind: Cyclical (capacity and housing cycle)
+    cyclical: true
+    cycle_signals: [coal, iip_cement]
+    primary: [ev_replacement, mid_cycle_ev_ebitda]
+    secondary: [normalised_pe]
+    avoid:
+      - {method: "P/E on current earnings", why: "Cement prices and fuel costs swing profits widely; P/E is lowest near the peak and highest near the bottom."}
+    why: "Cement plants take years and heavy money to build. If you can buy a company for less than the cost of building its capacity new (EV per tonne vs replacement cost), you are protected; above it, you pay for growth or brand. Compare on mid-cycle EV/EBITDA and EBITDA per tonne."
+    watch: ["Capacity (million tonnes) and utilisation", "EBITDA per tonne", "Cement prices by region", "Fuel cost (coal, petcoke)", "New capacity coming in the industry"]
+    sources: [greenwald, chancellor, mckinsey, damodaran_dark]
+  metals:
+    kind: Deep cyclical (commodity)
+    cyclical: true
+    cycle_signals: [iron_ore, coal, aluminium, copper, zinc, china_imports]
+    primary: [mid_cycle_ev_ebitda, pb_history]
+    secondary: [normalised_pe]
+    avoid:
+      - {method: "P/E on current earnings", why: "Lynch: with cyclicals a low P/E often means profits are at the peak, and a high P/E that they are at the bottom."}
+      - {method: "DCF on recent growth", why: "Extrapolating a commodity upswing gives wildly high values; extrapolating a downturn, wildly low."}
+    why: "Metal prices are set globally (much by China). Identify the cycle first, then value on mid-cycle EBITDA and on book value (what the plants are worth), never on peak profits."
+    watch: ["Global metal and raw material prices", "China output and exports", "Capacity additions", "Net debt"]
+    sources: [lynch, damodaran_dark, mckinsey, chancellor, marks]
+  oil_gas:
+    kind: Cyclical (commodity, often conglomerate)
+    cyclical: true
+    cycle_signals: [brent, lng_asia]
+    primary: [mid_cycle_ev_ebitda, sotp]
+    secondary: [normalised_pe]
+    avoid:
+      - {method: "P/E on one year", why: "Refining margins and crude swings move profits sharply."}
+    why: "Profits depend on crude and refining margins, which move in cycles: use mid-cycle EV/EBITDA. Groups with several businesses (refining, retail, telecom, gas) are valued part by part (sum of the parts)."
+    watch: ["Gross refining margins", "Crude and gas prices", "Marketing margins (government pricing)", "Segment EBITDA"]
+    sources: [damodaran_dark, mckinsey]
+  chemicals:
+    kind: Cyclical (commodity) or grower (specialty)
+    cyclical: true
+    cycle_signals: [brent, china_imports]
+    primary: [mid_cycle_ev_ebitda, pe_growth]
+    secondary: [dcf_earnings]
+    avoid:
+      - {method: "Valuing a commodity chemical maker like a specialty one", why: "Commodity chemicals follow Chinese supply cycles; specialty makers with patents or sticky clients deserve growth multiples."}
+    why: "First decide: commodity (price-taker, cyclical: use mid-cycle EV/EBITDA) or specialty (custom products, steady growth: use P/E against growth). The ratios table shows how stable the margins have been."
+    watch: ["Chinese prices and dumping", "Margin stability", "Customer concentration", "Capex"]
+    sources: [damodaran_dark, lynch, chancellor]
+  textiles:
+    kind: Cyclical (raw material)
+    cyclical: true
+    cycle_signals: [cotton]
+    primary: [normalised_pe, pb_history]
+    secondary: [mid_cycle_ev_ebitda]
+    avoid:
+      - {method: "P/E on one year", why: "Cotton prices and export demand swing margins."}
+    why: "Margins swing with cotton and export orders: average earnings across years and compare with book value."
+    watch: ["Cotton prices", "Export orders (US, EU)", "Working capital"]
+    sources: [graham_dodd, damodaran_dark]
+  power:
+    kind: Regulated utility
+    cyclical: false
+    primary: [pb_roe, dcf_earnings]
+    secondary: [mid_cycle_ev_ebitda]
+    avoid:
+      - {method: "P/E against growth", why: "Regulated utilities earn a set return on equity; growth comes from adding capacity, not from margins."}
+    why: "Regulators (CERC, state commissions) fix the return on equity for regulated plants and lines, so value rests on book value and the return earned on it, plus capacity being added. Merchant and renewable power earns market prices, so check the mix."
+    watch: ["Regulated vs merchant capacity", "Capacity under construction", "Plant load factor", "Receivables from state distribution companies"]
+    sources: [damodaran_iv, mckinsey]
+  capital_goods:
+    kind: Order-book driven (capex cycle)
+    cyclical: true
+    cycle_signals: [iip_capital_goods, iip_infra]
+    primary: [pe_growth, dcf_earnings]
+    secondary: [mid_cycle_ev_ebitda]
+    avoid:
+      - {method: "P/B", why: "Value lies in engineering skill and the order book, not in assets."}
+    why: "Revenue follows the order book, and orders follow the government and private capex cycle. Read P/E against growth, check the order book covers it (order book ÷ revenue), and see where the capex cycle is."
+    watch: ["Order book and order inflow", "Order book to revenue ratio", "Working capital", "Government capex"]
+    sources: [lynch, mckinsey, chancellor]
+  realty:
+    kind: Asset-based cyclical
+    cyclical: true
+    cycle_signals: [iip_infra, india_call_rate]
+    primary: [p_nav, pb_history]
+    secondary: [normalised_pe]
+    avoid:
+      - {method: "P/E", why: "Profits are booked only when projects are handed over, so they jump around regardless of sales."}
+    why: "A developer is worth its land and projects (net asset value). Pre-sales (bookings) show demand better than reported profit."
+    watch: ["Pre-sales (bookings) and collections", "Land bank", "Net debt", "Unsold inventory"]
+    sources: [damodaran_iv, greenwald]
+  gold:
+    kind: Jewellers and precious-metal businesses
+    cyclical: false
+    primary: [pe_growth, dcf_earnings]
+    secondary: [normalised_pe]
+    avoid:
+      - {method: "P/B", why: "For jewellers, brand and stores drive value; for gold financiers, see the lender methods."}
+    why: "Branded jewellers grow with incomes and gold demand: P/E against growth and DCF. Gold price swings move inventory gains, so check if a year was flattered."
+    watch: ["Same-store sales growth", "Gold price (inventory gains)", "Store additions"]
+    sources: [lynch, mckinsey]
+  general:
+    kind: General
+    cyclical: false
+    primary: [dcf_earnings, pe_growth]
+    secondary: [mid_cycle_ev_ebitda]
+    avoid: []
+    why: "No industry-specific method set: DCF and P/E against growth as the default, with EV/EBITDA to compare companies with different debt."
+    watch: []
+    sources: [mckinsey, lynch]

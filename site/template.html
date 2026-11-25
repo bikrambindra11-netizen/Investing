@@ -322,6 +322,7 @@ async function renderStock(isin) {
     <section class="panel"><h2>Industry (detected automatically)</h2>
       <ol class="levels">${lv.map(([k, v, src], i) => `<li><div class="tiny">${i + 1}. ${k}</div><div class="name">${esc(v || NA)}</div><div class="tiny">${esc(src)}</div></li>`).join("")}</ol>
       <p class="small" style="margin:10px 0 0"><a href="#industry-${esc(ind.id)}">Open the ${esc(ind.label)} industry page →</a></p></section>
+    ${m.valuation_guide ? `<section class="panel"><h2>How to value a ${esc(m.label)} company</h2>${guideBlock(m.valuation_guide, true)}<p class="tiny">Press “Analyse now” above to work these methods out live for this company.</p></section>` : ""}
     ${macroPanel(m, `Economy check: ${m.label}`)}
     <section class="panel"><h2>Competitors</h2><p class="sub">Same industry and sector, most traded first.</p>${peersTable([s, ...peers], isin)}</section>
     <section class="panel"><h2>Key risks</h2>${risks.length ? `<ul>${risks.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : `<p class="small">No specific red flags in the available data.</p>`}</section>
@@ -389,6 +390,7 @@ function renderIndustry(id) {
     <section class="live-box"><div class="live-head"><div><h2>Industry analysis (your framework)</h2><p class="sub">Claude pulls live numbers for every listed company in the industry (5-year margins, growth, returns, leverage, projections, P/E, P/B, EV/EBITDA, DCF value, Graham, Magic Formula, shareholding, free float, indices, delivery, latest news), then researches the industry from primary sources and answers your framework. About 15–20 minutes.</p></div>
       <button class="btn primary" id="ind-analyse">Analyse industry</button></div><div id="ind-body"></div></section>
     <section class="panel"><h2>Best on fundamentals in this industry</h2><p class="sub">From the fundamental scorecards (quality, value, growth, ownership, economy). Screening output, not advice.</p><div id="ind-top"><p class="tiny">Loading scorecards…</p></div></section>
+    ${m.valuation_guide ? `<section class="panel"><h2>How to value this industry</h2>${guideBlock(m.valuation_guide, true)}</section>` : ""}
     ${macroPanel(m, "Economy check")}
     <section class="panel"><h2>Companies in this industry</h2><p class="sub">Top 40 by value traded. Companies are placed using NSE sector lists and company names.</p>${peersTable(members.slice(0, 40))}</section>
     ${newsPanel(m.news, "Industry news")}`;
@@ -750,6 +752,7 @@ function renderQuant(q, fw) {
       ${q.dcf && q.dcf.assumptions ? `<p class="tiny">${esc(q.dcf.assumptions)}</p>` : ""}
       ${iv.available ? `<p class="tiny">${esc(iv.method)}</p>` : ""}${mf.available ? `<p class="small">${esc(mf.verdict)} (rank ${mf.peer_rank} of ${mf.peer_count} among competitors). <span class="tiny">${esc(mf.note)}</span></p>` : ""}</details>`;
   }
+  if (q.valuation_methods) h += methodsBlock(q.valuation_methods, true);
   if (q.graham) {
     h += `<details class="sec"><summary>Graham's defensive investor checks</summary><ul class="small">${q.graham.map((g) => `<li><span class="pill ${g.status === "pass" ? "good" : g.status === "fail" ? "bad" : "na"}">${esc(g.status.replace("_", " "))}</span> <b>${esc(g.name)}</b>: ${esc(g.value || NA)} <span class="tiny">(${esc(g.rule)})${g.note ? " " + esc(g.note) : ""}</span></li>`).join("")}</ul></details>`;
   }
@@ -828,6 +831,40 @@ function drawTechChart(q, elId = "techchart") {
 
 
 // ---------- industry report (every company, every ratio in the framework)
+
+// ---------- industry-specific valuation (backend/config/valuation_methods.yaml)
+function guideBlock(g, open) {
+  if (!g) return "";
+  const li = (xs) => xs.map((m) => `<li>${esc(m.name)}</li>`).join("");
+  return `<details class="sec" ${open ? "open" : ""}><summary>How to value this industry: ${esc(g.kind)}</summary>
+    <p class="small">${esc(g.why)}</p>
+    <div class="grid kv">${kv("Main methods", `<ol class="small" style="margin:0;padding-left:18px">${li(g.primary)}</ol>`)}${kv("Cross-checks", g.secondary.length ? `<ul class="small" style="margin:0;padding-left:18px">${li(g.secondary)}</ul>` : "—")}${kv("Cyclical?", g.cyclical ? "Yes. Identify the cycle first, then value on cycle-average numbers." : "No")}</div>
+    ${g.avoid.length ? `<p class="small"><b>Methods that mislead here:</b></p><ul class="small">${g.avoid.map((a) => `<li><b>${esc(a.method)}</b>: ${esc(a.why)}</li>`).join("")}</ul>` : ""}
+    ${g.watch.length ? `<p class="small"><b>Numbers to check in the annual report:</b> ${g.watch.map(esc).join(" · ")}</p>` : ""}
+    <p class="tiny">Based on: ${g.sources.map(esc).join("; ")}.</p></details>`;
+}
+function cycleBlock(c) {
+  if (!c || !c.cyclical) return "";
+  return `<div class="notice" style="margin:8px 0"><b>Cycle: ${esc(c.stage)}</b>${c.lynch ? ` — ${esc(c.lynch)}` : ""}
+    <ul class="small" style="margin:6px 0 0">${(c.evidence || []).map((e) => `<li>${esc(e)}</li>`).join("")}</ul>
+    <p class="tiny" style="margin:4px 0 0">${esc(c.how || "")} ${esc(c.note || "")}</p></div>`;
+}
+function methodsBlock(vm, open, noGuide) {
+  if (!vm) return "";
+  const rows = vm.methods.map((m) => {
+    const figs = m.figures ? Object.entries(m.figures).filter(([, v]) => v != null).map(([k, v]) => `${esc(k)}: ${typeof v === "number" ? v.toLocaleString("en-IN", { maximumFractionDigits: 2 }) : esc(v)}`).join(" · ") : "";
+    const val = m.value ? `₹${price(m.value)} <span class="tiny ${cls(m.upside_pct)}">${pct(m.upside_pct)} vs price</span>` : "";
+    return `<tr><td><b>${esc(m.name)}</b><div class="tiny">${m.role === "primary" ? "main method" : "cross-check"}</div></td>
+      <td>${m.available ? `${val ? val + "<br>" : ""}<span class="small">${esc(m.reading || "")}</span>` : `<span class="pill na">${m.needs_document ? "needs annual report" : "n/a"}</span>`}</td>
+      <td class="small">${esc(m.explain || m.reason || "")}${figs ? `<div class="tiny">${figs}</div>` : ""}</td></tr>`; }).join("");
+  return `<details class="sec" ${open ? "open" : ""}><summary>Valuation by the methods that suit ${esc(vm.guide.kind.toLowerCase())}</summary>
+    ${cycleBlock(vm.cycle)}
+    <div class="scroll"><table style="min-width:640px"><thead><tr><th>Method</th><th>Result</th><th>How it was worked out</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${vm.summary ? `<p class="small"><b>${esc(vm.summary)}</b></p>` : ""}
+    <p class="tiny">${esc(vm.label)} Cost of equity 12.5% a year, long-run growth 5%. Source: Upstox fundamentals and prices; commodity prices FRED; IIP MoSPI.</p>
+    ${noGuide ? "" : guideBlock(vm.guide)}</details>`;
+}
+
 function industryReport(r) {
   const n = (v, suf = "") => (v == null ? "—" : `${typeof v === "number" ? v.toLocaleString("en-IN", { maximumFractionDigits: 2 }) : v}${suf}`);
   const R = (x, k) => (x.ratios[k] || {}).company, RS = (x, k) => (x.ratios[k] || {}).sector;
@@ -840,12 +877,14 @@ function industryReport(r) {
       <td class="num">${n(f0.liabilities_to_equity, "×")}</td><td class="num">${n(f0.cfo_to_profit, "×")}</td>
       <td class="num">${n(R(x, "P/E"))} <span class="tiny">(${n(RS(x, "P/E"))})</span></td><td class="num">${n(R(x, "P/B"))}</td><td class="num">${n(R(x, "EV/EBITDA"))}</td>
       <td class="num">${x.dcf.available ? `₹${price(x.dcf.value)} <span class="tiny ${cls(x.dcf.upside_pct)}">${pct(x.dcf.upside_pct)}</span>` : "—"}</td>
+      <td class="small" style="min-width:170px">${x.methods ? esc((x.methods.methods.find((m) => m.role === "primary" && m.available) || {}).name || "—") + ": " + (() => { const m = x.methods.methods.find((m) => m.role === "primary" && m.available); return m ? (m.value ? `₹${price(m.value)} <span class="tiny ${cls(m.upside_pct)}">${pct(m.upside_pct)}</span>` : esc(m.reading || "")) : ""; })() : "—"}</td>
+      <td class="small">${x.methods && x.methods.cycle.cyclical ? esc(x.methods.cycle.stage) : "—"}</td>
       <td>${x.valuation ? `<span class="pill ${x.valuation.label === "cheap" ? "good" : x.valuation.label === "expensive" ? "bad" : "na"}">${esc(x.valuation.label)}</span>` : "—"}</td>
       <td class="num">${g(x)}</td><td class="num">${x.magic_formula.industry_rank ? `${x.magic_formula.industry_rank}/${x.magic_formula.of}` : "—"}</td>
       <td class="num">${n(x.free_float_pct, "%")}</td><td class="num">${x.delivery.available ? n(x.delivery.avg_delivery_pct, "%") : "—"}</td><td class="num ${cls(x.returns && x.returns.return_1y)}">${x.returns ? pct(x.returns.return_1y) : "—"}</td></tr>`; }).join("");
   const M = r.medians;
-  const table = `<div class="scroll"><table style="min-width:1500px"><thead><tr><th>Company</th><th class="num">Share of listed revenue</th><th class="num">Price ₹</th><th class="num">Mkt cap ₹Cr</th><th class="num">Revenue ₹Cr</th><th class="num">Revenue growth/yr</th><th class="num">Profit growth/yr</th><th class="num">Op. margin</th><th class="num">Net margin</th><th class="num">ROE</th><th class="num">ROCE</th><th class="num">Liab ÷ equity</th><th class="num">Cash ÷ profit</th><th class="num">P/E (sector)</th><th class="num">P/B</th><th class="num">EV/EBITDA</th><th class="num">Intrinsic value (vs price)</th><th>Valuation</th><th class="num">Graham</th><th class="num">Magic F.</th><th class="num">Free float</th><th class="num">Delivery %</th><th class="num">1 year</th></tr></thead>
-    <tbody>${rows}<tr style="background:var(--soft)"><td><b>Industry median</b></td><td></td><td></td><td></td><td></td><td class="num">${n(M.revenue_cagr, "%")}</td><td class="num">${n(M.profit_cagr, "%")}</td><td></td><td class="num">${n(M.net_margin_pct, "%")}</td><td class="num">${n(M.roe, "%")}</td><td class="num">${n(M.roce, "%")}</td><td></td><td></td><td class="num">${n(M.pe)}</td><td class="num">${n(M.pb)}</td><td class="num">${n(M.ev_ebitda)}</td><td colspan="7"></td></tr></tbody></table></div>`;
+  const table = `<div class="scroll"><table style="min-width:1500px"><thead><tr><th>Company</th><th class="num">Share of listed revenue</th><th class="num">Price ₹</th><th class="num">Mkt cap ₹Cr</th><th class="num">Revenue ₹Cr</th><th class="num">Revenue growth/yr</th><th class="num">Profit growth/yr</th><th class="num">Op. margin</th><th class="num">Net margin</th><th class="num">ROE</th><th class="num">ROCE</th><th class="num">Liab ÷ equity</th><th class="num">Cash ÷ profit</th><th class="num">P/E (sector)</th><th class="num">P/B</th><th class="num">EV/EBITDA</th><th class="num">Intrinsic value (vs price)</th><th>Industry method</th><th>Cycle</th><th>Valuation</th><th class="num">Graham</th><th class="num">Magic F.</th><th class="num">Free float</th><th class="num">Delivery %</th><th class="num">1 year</th></tr></thead>
+    <tbody>${rows}<tr style="background:var(--soft)"><td><b>Industry median</b></td><td></td><td></td><td></td><td></td><td class="num">${n(M.revenue_cagr, "%")}</td><td class="num">${n(M.profit_cagr, "%")}</td><td></td><td class="num">${n(M.net_margin_pct, "%")}</td><td class="num">${n(M.roe, "%")}</td><td class="num">${n(M.roce, "%")}</td><td></td><td></td><td class="num">${n(M.pe)}</td><td class="num">${n(M.pb)}</td><td class="num">${n(M.ev_ebitda)}</td><td colspan="9"></td></tr></tbody></table></div>`;
   const details = r.companies.map((x) => {
     const yrs = x.financials, pj = (x.projection.years || []).slice(0, 3);
     const line = (lab, fn, pf) => `<tr><td>${lab}</td>${yrs.map((y) => `<td class="num">${fn(y)}</td>`).join("")}${pj.map((p) => `<td class="num tiny">${pf ? pf(p) : ""}</td>`).join("")}</tr>`;
@@ -864,11 +903,14 @@ function industryReport(r) {
         ${kv("Indices", esc((x.indices || []).join(", ") || "none listed"))}${kv("Volume · delivery", x.delivery.available ? `${vol(x.delivery.latest.volume)} · ${n(x.delivery.latest.delivery_pct, "%")} (5-day avg ${n(x.delivery.avg_delivery_pct, "%")})` : NA)}</div>
       ${x.dcf.assumptions ? `<p class="tiny">${esc(x.dcf.assumptions)}</p>` : ""}
       ${x.valuation ? `<p class="tiny">${esc(x.valuation.why)}</p>` : ""}
+      ${x.methods ? methodsBlock(x.methods, true, true) : ""}
       ${sh ? `<div class="scroll"><table><thead><tr><th>Holder</th>${sh.periods.map((p) => `<th class="num">${esc(p)}</th>`).join("")}</tr></thead><tbody>${sh.rows.map((rr) => `<tr><td>${esc(rr.category)}</td>${rr.values.map((v) => `<td class="num">${n(v.pct, "%")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : ""}
       ${(x.graham || []).length ? `<p class="small">Graham: ${x.graham.map((c) => `${c.status === "pass" ? "✓" : c.status === "fail" ? "✗" : "~"} ${esc(c.name)}`).join(" · ")}</p>` : ""}
       ${(x.news || []).length ? `<ul class="small">${x.news.map((nn) => { const u = safeUrl(nn.link); return `<li><span class="pill ${esc(nn.sentiment)}">${esc(nn.sentiment)}</span> ${u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(nn.title)}</a>` : esc(nn.title)} <span class="tiny">${esc(nn.publisher || "")} · ${when(nn.published)}</span></li>`; }).join("")}</ul>` : ""}
     </details>`; }).join("");
-  return `<details class="sec" open><summary>Every company, every ratio (${r.covered} of ${r.listed_companies} listed, most traded first)</summary>${table}
+  const top = (r.valuation_guide ? guideBlock(r.valuation_guide, true) : "") + (r.cycle && r.cycle.cyclical ? `<div class="notice" style="margin:8px 0"><b>Where the industry is in its cycle:</b> ${Object.entries(r.cycle.company_stages || {}).map(([k, v]) => `${v} compan${v === 1 ? "y" : "ies"} ${esc(k)}`).join(", ") || "not enough history"}.
+    <ul class="small" style="margin:6px 0 0">${(r.cycle.commodities || []).map((c) => `<li>${esc(c.label)}: ${c.latest.toLocaleString("en-IN")} ${esc(c.unit)} (${esc(c.as_of)}), ${c.position_pct}% of the way up its ${esc(c.low.toLocaleString("en-IN"))}–${esc(c.high.toLocaleString("en-IN"))} range${c.change_12m_pct != null ? `, ${pct(c.change_12m_pct)} in 12 months` : ""} <span class="tiny">(${esc(c.source)})</span></li>`).join("")}</ul></div>` : "");
+  return top + `<details class="sec" open><summary>Every company, every ratio (${r.covered} of ${r.listed_companies} listed, most traded first)</summary>${table}
     <p class="tiny">${esc(r.notes)} Intrinsic value: DCF of free cash flow for non-financial companies, justified P/B for lenders (assumptions under each company). Sources: ${esc(r.sources)} Data as of ${when(r.generated_at)}.</p></details>
     <details class="sec"><summary>Company-by-company detail: 5-year history, projection, valuation, shareholding, news</summary>${details}</details>
     ${(r.industry_news || []).length ? `<details class="sec"><summary>Latest industry news</summary><ul class="small">${r.industry_news.map((nn) => { const u = safeUrl(nn.link); return `<li><span class="pill ${esc(nn.sentiment)}">${esc(nn.sentiment)}</span> ${u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(nn.title)}</a>` : esc(nn.title)} <span class="tiny">${when(nn.published)}</span></li>`; }).join("")}</ul></details>` : ""}`;

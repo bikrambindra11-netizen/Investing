@@ -10,6 +10,26 @@
 # the industry, and why = the one-line reason shown to the user.
 # not_tracked: drivers that matter but have no free data source; shown as a note.
 industries:
+  insurance:
+    label: Insurance
+    match: [insurance, assurance]
+    name_match: [insurance, assurance, lombard]
+    nse_sectors: []
+    drivers:
+      - {series: india_10y, good: up, why: "Insurers invest premiums in bonds; higher yields raise investment income on new money."}
+      - {series: gdp, good: up, why: "A growing economy means more people and businesses buying cover."}
+      - {series: cpi, good: down, why: "High inflation raises claim costs for general insurers and hurts savings products."}
+    not_tracked: ["Insurance penetration and new business premium growth (IRDAI monthly data)"]
+  capital_markets:
+    label: Asset managers, exchanges & brokers
+    match: [asset management, capital market, stock exchange, broking, depositor, registrar, exchange]
+    name_match: [asset management, " amc ", depository, " exchange "]
+    nse_sectors: []
+    drivers:
+      - {series: gdp, good: up, why: "A growing economy brings more savings into markets."}
+      - {series: cpi, good: down, why: "Lower inflation lifts real returns and moves savings into financial assets."}
+      - {series: india_10y, good: down, why: "Falling yields usually lift share prices, and fees depend on assets managed and trading volumes."}
+    not_tracked: ["Mutual fund AUM and SIP flows (AMFI monthly)", "Exchange trading volumes"]
   banks:
     label: Banks
     match: [bank]

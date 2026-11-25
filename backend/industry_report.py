@@ -17,7 +17,7 @@ os.environ.setdefault("RUN_JOBS", "false")
 os.environ.setdefault("UPSTOX_ACCESS_TOKEN", "proxy-injected")
 
 from backend.analyze_stock import projection  # noqa: E402
-from backend.app import analysis, jobs, macro  # noqa: E402
+from backend.app import analysis, jobs, macro, valuation_methods  # noqa: E402
 from backend.app.db import SessionLocal, init_db  # noqa: E402
 from backend.app.market_data import build_rows  # noqa: E402
 from backend.app.stock import company_news, industry_news  # noqa: E402
@@ -89,6 +89,7 @@ def main() -> None:
             stats = analysis.price_stats(candles)
             profile = (f.get("profile") or {}).get("data") or {}
             q_rows = analysis._table(((f.get("income_q") or {}).get("data") or {}).get("income_statement"), "category")
+            quarterly = {k: [{"period": p, "value": v} for p, v in sorted(vv.items(), key=lambda kv: analysis.period_end(kv[0]) or 0, reverse=True)][:4] for k, vv in q_rows.items()}
             out.append({
                 "isin": r["isin"], "symbol": r["symbol"], "name": r["name"], "price": price, "price_date": r["price_date"],
                 "basic_industry": profile.get("sector"), "description": (profile.get("company_profile") or "")[:500],
@@ -96,7 +97,8 @@ def main() -> None:
                 "financials": [{k: x[k] for k in ("period", "revenue", "operating_profit", "net_profit", "eps", "operating_margin_pct",
                                                    "net_margin_pct", "roe_pct", "cfo_to_profit", "current_ratio", "liabilities_to_equity",
                                                    "investing_cash_flow")} for x in fin["periods"][:5]],
-                "quarterly": {k: [{"period": p, "value": v} for p, v in sorted(vv.items(), key=lambda kv: analysis.period_end(kv[0]) or 0, reverse=True)][:4] for k, vv in q_rows.items()},
+                "quarterly": quarterly,
+                "methods": valuation_methods.assess(key, fin, kr, price, candles, quarterly) if fin["periods"] else None,
                 "growth": fin["growth"], "eps_adjustments": fin["eps_adjustments"], "projection": proj,
                 "ratios": kr, "valuation": {k: val[k] for k in ("chosen", "why", "metrics", "label", "history")} if val else None,
                 "dcf": analysis.dcf(key, fin, kr, price) if fin["periods"] else {"available": False, "reason": "No financials."},
@@ -128,10 +130,16 @@ def main() -> None:
         "ev_ebitda": med(lambda x: (x["ratios"].get("EV/EBITDA") or {}).get("company")),
         "revenue_cagr": med(lambda x: x["growth"].get("revenue_cagr_pct")), "profit_cagr": med(lambda x: x["growth"].get("net_profit_cagr_pct")),
     }
-    report = {"industry": key, "label": macro.load_industries()[key]["label"], "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    stages = [x["methods"]["cycle"]["stage"] for x in out if x.get("methods") and x["methods"]["cycle"].get("cyclical")]
+    g = valuation_methods.guide(key)
+    cycle = {"cyclical": g["cyclical"]}
+    if g["cyclical"]:
+        cycle.update({"company_stages": {s: stages.count(s) for s in sorted(set(stages))},
+                      "commodities": [c for c in (valuation_methods.commodity_position(s) for s in g["cycle_signals"]) if c]})
+    report = {"industry": key, "valuation_guide": g, "cycle": cycle, "label": macro.load_industries()[key]["label"], "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
               "listed_companies": total_listed, "covered": len(out), "prices_as_of": as_of, "medians": medians, "macro": ind_macro,
               "industry_news": industry_news(macro.load_industries()[key]["label"])["items"][:10], "companies": out,
-              "notes": "Revenue share is among the listed companies covered here, not the whole industry. Debt is not reported separately by the data source, so leverage uses total liabilities ÷ equity and DCF does not deduct debt. EV/replacement cost needs asset replacement values that are not published; P/B is shown as the nearest available measure.",
+              "notes": "Revenue share is among the listed companies covered here, not the whole industry. Debt is not reported separately by the data source, so leverage uses total liabilities ÷ equity and DCF does not deduct debt. Methods that need figures not in the data feed (installed capacity for EV/replacement cost, embedded value, land NAV, segment profits) are filled in by the research step from annual reports and investor presentations.",
               "sources": "Upstox fundamentals and candles; NSE bhavcopy and delivery data; NSE index lists; MoSPI, RBI, FRED; Google News."}
     with open(a.out, "w") as fh:
         json.dump(report, fh, default=str)

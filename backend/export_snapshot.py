@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
-from backend.app import analysis, macro, technicals
+from backend.app import analysis, macro, technicals, valuation_methods
 from backend.app.db import SessionLocal
 from backend.app.jobs import today_ist
 from backend.app.market_data import INDEX_TILES, build_rows
@@ -105,7 +105,7 @@ def main() -> None:
     industries = {}
     for iid in inds:
         m = macro.industry_macro(iid)
-        industries[slug(iid)] = {**m, "id": slug(iid), "news": industry_news(inds[iid]["label"])["items"][:10]}
+        industries[slug(iid)] = {**m, "id": slug(iid), "valuation_guide": valuation_methods.guide(iid), "news": industry_news(inds[iid]["label"])["items"][:10]}
 
     stocks = []
     for r in rows:
