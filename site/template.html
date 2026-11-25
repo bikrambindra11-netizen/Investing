@@ -458,6 +458,25 @@ function renderQuant(q, fw) {
         ${kv("Pivot / R1 / S1", `${price(t.pivots.pivot)} / ${price(t.pivots.r1)} / ${price(t.pivots.s1)}`)}</div>
       <ul class="small">${(t.observations || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul><p class="tiny">${esc(t.note || "")}</p></details>`;
   }
+  // Structure: Fibonacci, trend lines, patterns, weekly
+  const st = q.structure;
+  if (st) {
+    const fb = st.fibonacci;
+    h += `<details class="sec" open><summary>Chart structure: trend, Fibonacci, trend lines and patterns</summary>
+      ${st.weekly ? `<p class="small"><b>Weekly trend:</b> ${esc(st.weekly.structure)} · 10-week avg ₹${price(st.weekly.sma10w)} · 40-week avg ₹${price(st.weekly.sma40w)}</p>` : ""}
+      ${fb ? `<p class="small"><b>Fibonacci:</b> ${esc(fb.reading)}</p><div class="grid kv">${fb.levels.map((l) => kv(`Retracement ${l.ratio}`, "₹" + price(l.price))).join("")}${fb.extensions.map((l) => kv(`Extension ${l.ratio}`, "₹" + price(l.price))).join("")}</div>` : ""}
+      ${(st.trend_lines || []).length ? `<p class="small" style="margin-bottom:0"><b>Trend lines</b></p><ul class="small">${st.trend_lines.map((tl) => `<li>${esc(tl.kind)} from ₹${price(tl.from.price)} (${esc(tl.from.date)}) through ₹${price(tl.to.price)} (${esc(tl.to.date)}), ${tl.touches} touches; today at ₹${price(tl.value_now)} (price ${pct(tl.distance_pct)} from it)</li>`).join("")}</ul>` : ""}
+      ${(st.chart_patterns || []).length ? `<p class="small" style="margin-bottom:0"><b>Chart patterns</b></p><ul class="small">${st.chart_patterns.map((p) => `<li>${esc(p.pattern)} at ₹${price(p.level)} (${esc(p.points.join(" & "))}), neckline ₹${price(p.neckline)} — ${esc(p.meaning)}</li>`).join("")}</ul>` : ""}
+      ${(st.candles || []).length ? `<p class="small" style="margin-bottom:0"><b>Candle patterns (last 30 sessions)</b></p><div class="scroll"><table><thead><tr><th>Date</th><th>Pattern</th><th>What it means</th></tr></thead><tbody>${st.candles.slice(-15).reverse().map((p) => `<tr><td class="tiny">${esc(p.date)}</td><td>${esc(p.pattern)}</td><td class="small">${esc(p.meaning)}</td></tr>`).join("")}</tbody></table></div>` : ""}
+      <p class="tiny">Detected automatically from swing highs and lows; Claude checks them against the chart in the written analysis.</p></details>`;
+  }
+  // Futures and strikes at key levels
+  if (q.futures && q.futures.available) {
+    h += `<details class="sec" open><summary>Futures</summary><div class="grid kv">${q.futures.contracts.map((f) => kv(`Futures ${esc(f.expiry)}`, `₹${price(f.price)} <span class="tiny">(${f.basis >= 0 ? "premium" : "discount"} ₹${price(Math.abs(f.basis))}, ${pct(f.basis_pct)}) · lot ${vol(f.lot_size)}</span>`)).join("")}</div></details>`;
+  }
+  if ((q.strikes || []).length) {
+    h += `<details class="sec" open><summary>Option strikes at the levels that matter (expiry ${esc(q.strikes[0].expiry)})</summary><div class="scroll"><table style="min-width:760px"><thead><tr><th class="num">Strike</th><th>Why this strike</th><th class="num">Call ₹</th><th class="num">Call OI (chg)</th><th class="num">Call Δ / IV</th><th class="num">Call break-even</th><th class="num">Put ₹</th><th class="num">Put OI (chg)</th><th class="num">Put Δ / IV</th><th class="num">Put break-even</th></tr></thead><tbody>${q.strikes.map((k) => `<tr><td class="num"><b>${k.strike}</b></td><td class="small">${k.why.map(esc).join("; ")}</td><td class="num">${price(k.call.ltp)}</td><td class="num">${vol(k.call.oi)} <span class="tiny">(${k.call.oi_change >= 0 ? "+" : ""}${vol(k.call.oi_change)})</span></td><td class="num">${k.call.delta ?? NA} / ${k.call.iv ?? NA}%</td><td class="num">${price(k.call.breakeven)}</td><td class="num">${price(k.put.ltp)}</td><td class="num">${vol(k.put.oi)} <span class="tiny">(${k.put.oi_change >= 0 ? "+" : ""}${vol(k.put.oi_change)})</span></td><td class="num">${k.put.delta ?? NA} / ${k.put.iv ?? NA}%</td><td class="num">${price(k.put.breakeven)}</td></tr>`).join("")}</tbody></table></div><p class="tiny">Each strike sits at a support/resistance, Fibonacci, expected-range or open-interest level. Data for your own decision; not a recommendation.</p></details>`;
+  }
   // Options & trade idea
   if (q.fno && q.fno.has_fno) {
     const oc = q.option_chain || {};
@@ -533,6 +552,7 @@ function renderFramework(fw) {
   for (const sec of fw.sections || []) {
     h += `<details class="sec" open><summary>${esc(sec.title)}</summary><div class="qa">${(sec.items || []).map((it) => `<div><div class="q">${esc(it.question)}</div><div class="a">${esc(it.answer)}</div>${(it.sources || []).length ? `<div class="s">${it.sources.map((x) => { const u = safeUrl(x.url); return u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(x.title || u)}</a>` : esc(x.title); }).join(" · ")}</div>` : ""}</div>`).join("")}</div></details>`;
   }
+  if (fw.chart_read) h += `<details class="sec" open><summary>Claude's reading of the chart</summary><p style="white-space:pre-wrap">${esc(fw.chart_read)}</p></details>`;
   if (fw.trade_view) h += `<details class="sec" open><summary>Trading context (analysis, not a recommendation)</summary><p>${esc(fw.trade_view)}</p></details>`;
   h += `<p class="tiny" style="font-weight:600">Screening and research output only. Not investment advice.</p>`;
   return h;
@@ -542,19 +562,27 @@ function drawTechChart(q) {
   const el = document.getElementById("techchart"); if (!el) return;
   const c = q.chart.map((r) => ({ d: r[0], o: r[1], h: r[2], l: r[3], c: r[4] }));
   const t = q.technicals, W = 760, H = 300, L = 8, R = 70, T = 10, B = 24;
+  const st = q.structure || {}, fib = st.fibonacci, tls = st.trend_lines || [], cps = st.chart_patterns || [];
   const levels = [...(t.supports || []), ...(t.resistances || [])];
   const lo = Math.min(...c.map((x) => x.l), ...levels.map((l) => l.level)), hi = Math.max(...c.map((x) => x.h), ...levels.map((l) => l.level));
+  const inR = (v) => v >= lo * 0.97 && v <= hi * 1.03;
   const pad = (hi - lo) * 0.04, y0 = lo - pad, y1 = hi + pad;
   const X = (i) => L + (i / (c.length - 1)) * (W - L - R), Y = (v) => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
   const bw = Math.max(1, (W - L - R) / c.length * 0.6);
   const candles = c.map((x, i) => { const up = x.c >= x.o, col = up ? "var(--up)" : "var(--down)"; return `<line x1="${X(i).toFixed(1)}" x2="${X(i).toFixed(1)}" y1="${Y(x.h).toFixed(1)}" y2="${Y(x.l).toFixed(1)}" stroke="${col}"/><rect x="${(X(i) - bw / 2).toFixed(1)}" y="${Y(Math.max(x.o, x.c)).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1, Math.abs(Y(x.o) - Y(x.c))).toFixed(1)}" fill="${col}"/>`; }).join("");
   const ma = (n) => { const pts = []; for (let i = n - 1; i < c.length; i++) { let s = 0; for (let j = i - n + 1; j <= i; j++) s += c[j].c; pts.push(`${pts.length ? "L" : "M"}${X(i).toFixed(1)},${Y(s / n).toFixed(1)}`); } return pts.join(""); };
   const lines = levels.map((l) => `<line x1="${L}" x2="${W - R}" y1="${Y(l.level).toFixed(1)}" y2="${Y(l.level).toFixed(1)}" stroke="${l.kind === "support" ? "var(--up)" : "var(--down)"}" stroke-dasharray="5 4" stroke-width="1.2"/><text x="${W - R + 4}" y="${(Y(l.level) + 4).toFixed(1)}" font-size="10.5" fill="${l.kind === "support" ? "var(--up)" : "var(--down)"}" font-family="var(--mono)">${inr.format(l.level)}</text>`).join("");
+  const n = c.length, dates = c.map((x) => x.d);
+  const fibs = fib ? fib.levels.filter((l) => inR(l.price)).map((l) => `<line x1="${L}" x2="${W - R}" y1="${Y(l.price).toFixed(1)}" y2="${Y(l.price).toFixed(1)}" stroke="var(--warn)" stroke-dasharray="1 3" stroke-width="1"/><text x="${L + 2}" y="${(Y(l.price) - 2).toFixed(1)}" font-size="9" fill="var(--warn)">Fib ${l.ratio}</text>`).join("") : "";
+  const trend = tls.map((tl) => { const i1 = n - 1 - tl.from.bars_ago, x0 = Math.max(i1, 0); const y = (i) => tl.from.price + tl.slope_per_day * (i - i1); return `<line x1="${X(x0).toFixed(1)}" x2="${X(n - 1).toFixed(1)}" y1="${Y(y(x0)).toFixed(1)}" y2="${Y(y(n - 1)).toFixed(1)}" stroke="var(--accent)" stroke-width="1.6"/>`; }).join("");
+  const necks = cps.filter((p) => inR(p.neckline)).map((p) => `<line x1="${L}" x2="${W - R}" y1="${Y(p.neckline).toFixed(1)}" y2="${Y(p.neckline).toFixed(1)}" stroke="#0ea5e9" stroke-dasharray="6 2 1 2" stroke-width="1"/>`).join("");
+  const BEAR = ["Bearish engulfing", "Shooting star", "Evening star", "Three black crows", "Bearish marubozu", "Bearish harami", "Gap down"];
+  const marks = (st.candles || []).filter((p) => dates.indexOf(p.date) >= n - 25).map((p) => { const i = dates.indexOf(p.date), bear = BEAR.includes(p.pattern), y = bear ? Y(c[i].h) - 6 : Y(c[i].l) + 6; return `<path d="M${X(i).toFixed(1)},${y.toFixed(1)} l-3.5,${bear ? -6 : 6} h7 z" fill="${bear ? "var(--down)" : "var(--up)"}"><title>${esc(p.date)}: ${esc(p.pattern)} — ${esc(p.meaning)}</title></path>`; }).join("");
   const months = c.filter((x, i) => i === 0 || x.d.slice(5, 7) !== c[i - 1].d.slice(5, 7)).filter((_, i) => i % 2 === 0);
-  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Candlestick chart with support and resistance">${lines}${candles}
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Candlestick chart with support, resistance, Fibonacci, trend lines and patterns">${fibs}${necks}${lines}${trend}${candles}${marks}
     <path d="${ma(50)}" fill="none" stroke="var(--accent)" stroke-width="1.4"/><path d="${ma(20)}" fill="none" stroke="var(--muted)" stroke-width="1" stroke-dasharray="2 2"/>
     ${months.map((x) => `<text x="${X(c.indexOf(x)).toFixed(1)}" y="${H - 6}" font-size="10" fill="var(--muted)">${new Date(x.d).toLocaleDateString("en-IN", { month: "short" })}</text>`).join("")}</svg>
-    <p class="tiny">Last 12 months, daily candles. Green dashed = support, red dashed = resistance. Solid line = 50-day average, dotted = 20-day.</p>`;
+    <p class="tiny">Last 12 months, daily candles. Green/red dashed = support/resistance · dotted gold = Fibonacci · solid green = trend lines · blue dash-dot = pattern necklines · ▲▼ = candle patterns in the last 25 sessions (hover for names) · blue line = 50-day average, dotted grey = 20-day.</p>`;
 }
 
 // ---------- trading tab (F&O scan)

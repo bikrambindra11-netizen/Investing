@@ -102,3 +102,64 @@ def news_score(items: list[dict]) -> float:
         return 0.0
     v = sum(1 if n["sentiment"] == "positive" else -1 if n["sentiment"] == "negative" else 0 for n in items[:10])
     return max(-1.0, min(1.0, v / 5))
+
+
+def futures_quote(underlying_key: str, today: date) -> dict:
+    """Nearest-month futures price and its premium/discount to the stock."""
+    raw = cached_download(INSTRUMENTS_URL, "upstox_complete.json.gz", max_age_s=12 * 3600)
+    futs = [x for x in json.loads(gzip.decompress(raw)) if x.get("segment") == "NSE_FO" and x.get("instrument_type") == "FUT"
+            and x.get("underlying_key") == underlying_key]
+    futs = [f for f in futs if datetime.fromtimestamp(f["expiry"] / 1000).date() >= today]
+    if not futs:
+        return {"available": False}
+    futs.sort(key=lambda f: f["expiry"])
+    keys = [f["instrument_key"] for f in futs[:2]] + [underlying_key]
+    px = upstox_bulk.last_prices(keys)
+    spot = px.get(underlying_key)
+    out = []
+    for f in futs[:2]:
+        p = px.get(f["instrument_key"])
+        exp = datetime.fromtimestamp(f["expiry"] / 1000).date()
+        if p and spot:
+            out.append({"expiry": exp.isoformat(), "price": p, "basis": round(p - spot, 2), "basis_pct": round((p / spot - 1) * 100, 2),
+                        "lot_size": f["lot_size"]})
+    return {"available": bool(out), "spot": spot, "contracts": out}
+
+
+def strikes_that_matter(chain: dict, tech: dict, struct: dict, pos: dict) -> list[dict]:
+    """Option strikes sitting at the levels that matter, with their market data. Information only."""
+    if not chain.get("available"):
+        return []
+    rows = {r["strike"]: r for r in chain["rows"]}
+    strikes = sorted(rows)
+    refs = []
+    for l in tech.get("supports", []):
+        refs.append((l["level"], f"support ₹{l['level']:,.2f}"))
+    for l in tech.get("resistances", []):
+        refs.append((l["level"], f"resistance ₹{l['level']:,.2f}"))
+    fib = (struct or {}).get("fibonacci")
+    if fib:
+        for lv in fib["levels"]:
+            refs.append((lv["price"], f"Fibonacci {lv['ratio']} at ₹{lv['price']:,.2f}"))
+    em = pos.get("expected_move")
+    if em:
+        refs += [(em["low"], f"lower edge of expected range ₹{em['low']:,.2f}"), (em["high"], f"upper edge of expected range ₹{em['high']:,.2f}")]
+    refs += [(chain["call_wall"], "most call open interest"), (chain["put_wall"], "most put open interest"),
+             (chain["atm_strike"], "at the money")]
+    picked: dict[float, list[str]] = {}
+    for level, why in refs:
+        k = min(strikes, key=lambda s: abs(s - level))
+        if abs(k / level - 1) <= 0.03:
+            picked.setdefault(k, []).append(why)
+    out = []
+    for k in sorted(picked):
+        r = rows[k]
+        ce, pe, cg, pg = r["ce"], r["pe"], r["ce_g"], r["pe_g"]
+        out.append({"strike": k, "why": sorted(set(picked[k])), "expiry": chain["expiry"],
+                    "call": {"ltp": ce.get("ltp"), "oi": ce.get("oi"), "oi_change": (ce.get("oi") or 0) - (ce.get("prev_oi") or 0),
+                             "iv": cg.get("iv"), "delta": cg.get("delta"), "theta": cg.get("theta"),
+                             "breakeven": round(k + ce["ltp"], 2) if ce.get("ltp") else None},
+                    "put": {"ltp": pe.get("ltp"), "oi": pe.get("oi"), "oi_change": (pe.get("oi") or 0) - (pe.get("prev_oi") or 0),
+                            "iv": pg.get("iv"), "delta": pg.get("delta"), "theta": pg.get("theta"),
+                            "breakeven": round(k - pe["ltp"], 2) if pe.get("ltp") else None}})
+    return out

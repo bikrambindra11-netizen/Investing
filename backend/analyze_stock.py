@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 os.environ.setdefault("RUN_JOBS", "false")
 os.environ.setdefault("UPSTOX_ACCESS_TOKEN", "proxy-injected")  # the proxy replaces it with the real token
 
-from backend.app import analysis, correlations, derivatives, jobs, macro, technicals  # noqa: E402
+from backend.app import analysis, chart_image, correlations, derivatives, jobs, macro, technicals  # noqa: E402
 from backend.app.db import DailyPrice, Instrument, SessionLocal, init_db  # noqa: E402
 from backend.sources import upstox_bulk, upstox_candles, upstox_fundamentals  # noqa: E402
 
@@ -183,6 +183,8 @@ def main() -> None:
     # Technicals, options, commodity links and a trade idea
     candles = candles_with_today(primary.instrument_key)
     tech = technicals.analyse(candles, price)
+    struct = technicals.structure(candles)
+    png = chart_image.render(out_path.rsplit(".", 1)[0] + "_chart.png", primary.symbol, candles, tech, struct)
     fno = derivatives.fno_universe().get(primary.instrument_key)
     chain = {"available": False}
     if fno and fno["has_options"]:
@@ -192,6 +194,8 @@ def main() -> None:
     links = correlations.analyse(candles, nifty, jobs.today_ist())
     rate = rating(parts)
     pos = derivatives.positioning(primary.symbol, fno["lot_size"] if fno else None, tech, chain, jobs.today_ist())
+    strikes = derivatives.strikes_that_matter(chain, tech, struct, pos) if fno else []
+    fut = derivatives.futures_quote(primary.instrument_key, jobs.today_ist()) if fno else {"available": False}
     chain_out = {k: v for k, v in chain.items() if k != "rows"}
     if chain.get("available"):  # strikes near the money, for display
         near = sorted(chain["rows"], key=lambda r: abs(r["strike"] - chain["spot"]))[:12]
@@ -202,6 +206,10 @@ def main() -> None:
     page.pop("candles", None)
     result = {
         "technicals": tech,
+        "structure": struct,
+        "chart_image": png,
+        "strikes": strikes,
+        "futures": fut,
         "chart": [[c["date"], c["open"], c["high"], c["low"], c["close"], c["volume"]] for c in candles[-260:]],
         "fno": {"has_fno": bool(fno), "lot_size": fno["lot_size"] if fno else None,
                 "expiries": fno["expiries"][:3] if fno else []},
