@@ -1,5 +1,17 @@
 # Stock Picker Portal: project brief for Claude Code
 
+## Ground rules from the owner (always apply)
+
+- **Analysis only. Never trade.** Never place, modify or cancel any order, and never move money, on any
+  broker or platform, for any reason. Only the owner takes positions, and only by doing it themselves.
+- **No recommendations.** Never tell the owner to buy or sell a stock, option or future, and never pick a
+  strike, quantity or position size for them. Describe the picture (fundamentals, economy, commodities,
+  news, chart structure, option data), the bull and bear cases, and what would change the view.
+- **Nothing outside analysis without being asked.** Do not take actions beyond analysis and building this
+  portal unless the owner explicitly asks.
+- The Upstox token in use is a read-only **Analytics Token**: it cannot trade, and it must never be
+  replaced with a trading-enabled token.
+
 ## What we are building
 
 A personal web portal for Indian equities (NSE + BSE) that helps pick stocks using both
