@@ -20,6 +20,33 @@ from backend.app.market_data import build_rows  # noqa: E402
 from backend.build_cards import bucket  # noqa: E402
 
 FIN = {"banks", "nbfc", "insurance"}
+
+# How each sector's companies are ranked: the measures that fit the industry (each ranked within the sector,
+# ranks added, lowest total first). mos = margin of safety on the Graham/Buffett values that suit the industry;
+# roc / ey = Greenblatt's return on capital and earnings yield; roe = return on equity; cycle = earlier in the
+# cycle ranks better (Graham and Lynch: buy cyclicals on depressed, not peak, earnings).
+_GREEN = "Greenblatt's Magic Formula (return on capital + earnings yield) works here, combined with the Graham/Buffett margin of safety."
+SECTORS = {
+    "it": {"factors": ["roc", "ey", "mos"], "why": "Asset-light, cash-rich: " + _GREEN},
+    "fmcg": {"factors": ["roc", "ey", "mos"], "why": "Brand businesses with high returns on capital: " + _GREEN},
+    "pharma": {"factors": ["roc", "ey", "mos"], "why": _GREEN},
+    "consumer_durables": {"factors": ["roc", "ey", "mos"], "why": _GREEN},
+    "gold": {"factors": ["roc", "ey", "mos"], "why": _GREEN},
+    "capital_markets": {"factors": ["roc", "ey", "mos"], "why": "Fee businesses on little capital: " + _GREEN},
+    "general": {"factors": ["roc", "ey", "mos"], "why": _GREEN},
+    "capital_goods": {"factors": ["roc", "ey", "mos", "cycle"], "why": "Order-book driven and tied to the capex cycle: Magic Formula plus margin of safety, and earlier in the cycle ranks better."},
+    "chemicals": {"factors": ["ey", "mos", "roc", "cycle"], "why": "Partly cyclical: Magic Formula and margin of safety on cycle-average earnings; earlier in the cycle ranks better."},
+    "auto": {"factors": ["ey", "mos", "roc", "cycle"], "why": "Cyclical demand: Magic Formula and margin of safety on cycle-average earnings; earlier in the cycle ranks better."},
+    "metals": {"factors": ["mos", "ey", "cycle"], "why": "Deep cyclical (The Intelligent Investor; Lynch): value on cycle-average earnings and assets, and earlier in the cycle ranks better; return on capital is ignored because it peaks with prices."},
+    "cement": {"factors": ["mos", "ey", "cycle"], "why": "Cyclical and asset-heavy: Graham margin of safety on assets and cycle-average earnings, earnings yield, and earlier in the cycle ranks better."},
+    "oil_gas": {"factors": ["mos", "ey", "cycle"], "why": "Commodity-driven: margin of safety on assets and cycle-average cash flow, earnings yield, and earlier in the cycle ranks better."},
+    "textiles": {"factors": ["mos", "ey", "cycle"], "why": "Cyclical, raw-material driven: margin of safety, earnings yield, and earlier in the cycle ranks better."},
+    "realty": {"factors": ["mos", "cycle"], "why": "Asset-based and cyclical: Graham's book-value margin of safety, and earlier in the cycle ranks better; the Magic Formula does not fit lumpy profits."},
+    "banks": {"factors": ["mos", "roe"], "why": "Greenblatt leaves out banks. Graham/Buffett: margin of safety on book value and distributable profit, plus return on equity."},
+    "nbfc": {"factors": ["mos", "roe"], "why": "Greenblatt leaves out lenders. Graham/Buffett: margin of safety on book value and distributable profit, plus return on equity."},
+    "insurance": {"factors": ["mos", "roe"], "why": "Greenblatt leaves out insurers. Margin of safety on book value and distributable profit, plus return on equity."},
+    "power": {"factors": ["mos", "roe"], "why": "Greenblatt leaves out utilities. Regulated returns on book value: Graham margin of safety plus return on equity."},
+}
 YEAR_KEYS = ["period", "revenue", "pat", "eps", "book_value_per_share", "roe_pct", "net_margin_pct", "cfo", "cfi", "current_ratio", "liabilities_to_equity"]
 
 
@@ -69,7 +96,8 @@ def main() -> None:
         cards[isin] = c
         g, b = v["graham"], v["buffett"]
         index.append([isin, r["symbol"], r["name"], labels.get(ind, ind), price, g["number"], g["formula"], b["value"], v.get("value_mid"),
-                      v.get("margin_of_safety_pct"), g["passed"], g["of"], b["passed"], b["of"], round((r["turnover"] or 0) / 1e7, 1), 1 if v.get("suspect") else 0])
+                      v.get("margin_of_safety_pct"), g["passed"], g["of"], b["passed"], b["of"], round((r["turnover"] or 0) / 1e7, 1), 1 if v.get("suspect") else 0,
+                      ind, ys[0].get("roe_pct")])
     # Greenblatt: rank on return on capital and on earnings yield, add the ranks, lowest total = best
     elig = [i for i, c in cards.items() if not c["v"]["magic"]["excluded"] and c["v"]["magic"]["roc_pct"] is not None
             and c["v"]["magic"].get("earnings_yield_pct") and (by[i]["turnover"] or 0) >= 1e7 and not c["v"].get("suspect")]
@@ -78,8 +106,8 @@ def main() -> None:
     for pos, i in enumerate(sorted(elig, key=lambda i: (r1[i] + r2[i], r1[i])), 1):
         cards[i]["v"]["magic"].update(rank=pos, of=len(elig), roc_rank=r1[i], ey_rank=r2[i])
     mf = {i: cards[i]["v"]["magic"] for i in cards}
-    index = [row + [mf[row[0]].get("rank"), mf[row[0]].get("roc_pct"), mf[row[0]].get("earnings_yield_pct"),
-                    (cards[row[0]]["v"].get("cycle") or {}).get("stage")] for row in index]
+    index = [row + [mf[row[0]].get("roc_pct"), mf[row[0]].get("earnings_yield_pct"),
+                    (cards[row[0]]["v"].get("cycle") or {}).get("stage"), mf[row[0]].get("rank")] for row in index]
     out.mkdir(parents=True, exist_ok=True)
     for old in out.glob("*.json"):
         old.unlink()
@@ -95,7 +123,9 @@ def main() -> None:
     meta = {"chunks": n, "index_parts": len(parts), "companies": len(cards), "bond_yield": bond, "bond_yield_date": pts[-1][0] if pts else None,
             "prices_as_of": as_of, "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "columns": ["isin", "symbol", "name", "industry", "price", "graham_number", "graham_formula", "buffett_value", "value_mid",
-                        "margin_of_safety_pct", "graham_passed", "graham_of", "buffett_passed", "buffett_of", "turnover_cr", "flagged", "mf_rank", "roc_pct", "earnings_yield_pct", "cycle"],
+                        "margin_of_safety_pct", "graham_passed", "graham_of", "buffett_passed", "buffett_of", "turnover_cr", "flagged", "industry_id", "roe_pct",
+                        "roc_pct", "earnings_yield_pct", "cycle", "mf_rank"],
+            "sectors": SECTORS, "labels": labels,
             "magic_formula_universe": len(elig)}
     (out / "meta.json").write_text(json.dumps(meta, default=str))
     sizes = [os.path.getsize(p) for p in out.glob("*.json")]

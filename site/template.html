@@ -107,6 +107,9 @@ details.sec { border-top: 1px solid var(--line); padding-top: 8px } details.sec 
 .btn.sm { padding: 3px 9px; font-size: 12px } .btn.armed { background: var(--warn-bg); border-color: var(--warn); color: var(--warn) }
 footer { font-size: 12px; color: var(--muted); padding-block: 0 30px }
 @media (prefers-reduced-motion: no-preference) { .tile, .card { transition: border-color .15s } }
+  nav.sectors { display: flex; gap: 6px; overflow-x: auto; padding: 6px 0 8px; scrollbar-width: thin; }
+  nav.sectors a { white-space: nowrap; font-size: 13px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink); text-decoration: none; }
+  nav.sectors a[aria-current="page"] { background: var(--accent); color: #fff; border-color: var(--accent); }
 </style>
 
 <header class="top"><div class="wrap">
@@ -116,7 +119,7 @@ footer { font-size: 12px; color: var(--muted); padding-block: 0 30px }
     <a href="#investing" data-tab="investing">Investing</a>
   </nav>
   <span class="fresh" id="fresh">Loading data…</span>
-</div></header>
+</div><div class="wrap"><nav class="sectors" id="sectors" aria-label="Sectors"></nav></div></header>
 
 <main class="wrap" id="app"><p class="loading">Loading the market…</p></main>
 <footer class="wrap">Personal tool. Investing: Graham and Buffett value from the company's statements (Upstox). Trading: charts from NSE/BSE and Upstox prices. Not investment advice.</footer>
@@ -168,7 +171,9 @@ function route() {
   const tab = h.startsWith("stock-") ? "market" : h.startsWith("industry-") ? "industries" : h;
   const cur = document.querySelector(`nav.tabs a[data-tab="${tab}"]`); if (cur) cur.setAttribute("aria-current", "page");
   if (!S.stocks) return;
-  if (h.startsWith("stock-")) renderStock(h.slice(6));
+  document.querySelectorAll("nav.sectors a").forEach((a) => a.toggleAttribute("aria-current", a.getAttribute("href") === "#" + h));
+  if (h.startsWith("sector-")) renderSector(h.slice(7));
+  else if (h.startsWith("stock-")) renderStock(h.slice(6));
   else if (h.startsWith("industry-")) renderIndustry(h.slice(9));
   else (routes[h] || renderMarket)();
   if (!h.startsWith("market") || view.page === 0) window.scrollTo(0, 0);
@@ -1051,6 +1056,53 @@ function fullCard(c) {
   return h + `<p class="tiny">Screening output from published figures. Not investment advice.</p>`;
 }
 
+
+// ---------- sectors: each industry ranked on the measures that fit it
+const CYC_ORDER = { "near the bottom of its cycle": 1, "in an upswing": 2, "in a downswing": 3, "near the top of its cycle": 4 };
+const FACTOR = {
+  mos: { label: "Margin of safety", get: (r) => r.margin_of_safety_pct, fmt: (v) => pct(v), hi: true },
+  roc: { label: "Return on capital (Greenblatt)", get: (r) => r.roc_pct, fmt: (v) => v + "%", hi: true },
+  ey: { label: "Earnings yield (Greenblatt)", get: (r) => r.earnings_yield_pct, fmt: (v) => v + "%", hi: true },
+  roe: { label: "Return on equity", get: (r) => r.roe_pct, fmt: (v) => v + "%", hi: true },
+  cycle: { label: "Cycle (earlier ranks better)", get: (r) => (r.cycle ? CYC_ORDER[r.cycle] ?? null : null), fmt: (v, r) => esc(r.cycle || "—"), hi: false },
+};
+function drawSectorNav() {
+  const el = document.getElementById("sectors"); if (!el || el.dataset.done) return;
+  el.innerHTML = Object.values(S.industries).sort((a, b) => a.label.localeCompare(b.label)).map((i) => `<a href="#sector-${esc(i.id)}">${esc(i.label)}</a>`).join("");
+  el.dataset.done = "1";
+}
+async function renderSector(id) {
+  const key = id.replace(/-/g, "_"), ind = S.industries[id];
+  app().innerHTML = `<div><h1>${esc(ind ? ind.label : id)}</h1><p class="sub" id="sec-why">Loading…</p></div>
+    <section class="panel"><div class="controls"><select id="sec-liq" aria-label="Liquidity"><option value="1">₹1 crore+ traded a day</option><option value="0">All companies</option></select></div><div id="sec-body"><p class="loading">Ranking…</p></div></section>`;
+  const idx = await valueIndex(), m = VAL.meta;
+  const body = document.getElementById("sec-body"); if (!body) return;
+  if (!idx) { body.innerHTML = `<p class="notice">Rankings are read from this page's database: open the page on claude.ai while signed in.</p>`; return; }
+  const cfg = (m.sectors || {})[key] || { factors: ["mos"], why: "Ranked on margin of safety." };
+  document.getElementById("sec-why").textContent = `How this sector is ranked: ${cfg.why}`;
+  const draw = () => {
+    const liq = document.getElementById("sec-liq").value === "1";
+    const rows = idx.filter((r) => r.industry_id === key && !r.flagged && (!liq || r.turnover_cr >= 1));
+    const ranks = {};
+    cfg.factors.forEach((f) => {
+      const F = FACTOR[f], have = rows.filter((r) => F.get(r) != null).sort((a, b) => (F.hi ? F.get(b) - F.get(a) : F.get(a) - F.get(b)));
+      ranks[f] = {}; have.forEach((r, i) => (ranks[f][r.isin] = i > 0 && F.get(r) === F.get(have[i - 1]) ? ranks[f][have[i - 1].isin] : i + 1));  // equal values share a rank
+    });
+    const total = (r) => cfg.factors.reduce((t, f) => t + (ranks[f][r.isin] ?? rows.length), 0);
+    const list = rows.slice().sort((a, b) => total(a) - total(b));
+    const cyc = cfg.factors.includes("cycle");
+    body.innerHTML = list.length ? `<div class="scroll"><table style="min-width:980px"><thead><tr><th class="num">#</th><th>Company</th><th class="num">Price</th><th class="num">Value (middle)</th>${cfg.factors.map((f) => `<th class="num">${FACTOR[f].label}</th>`).join("")}${cyc ? "" : "<th>Cycle</th>"}<th class="num">Buffett checks</th><th class="num">Graham checks</th></tr></thead><tbody>${
+      list.map((r, i) => `<tr><td class="num">${i + 1}</td><td><div class="name"><a href="#stock-${esc(r.isin)}">${esc(r.symbol)}</a></div><div class="co">${esc(r.name || "")}</div></td>
+        <td class="num">₹${price(r.price)}</td><td class="num">${r.value_mid ? "₹" + price(r.value_mid) : "—"}</td>
+        ${cfg.factors.map((f) => { const v = FACTOR[f].get(r); return `<td class="num ${f === "mos" ? cls(v) : ""}">${v == null ? "—" : FACTOR[f].fmt(v, r)}<div class="tiny">${ranks[f][r.isin] ? "rank " + ranks[f][r.isin] : ""}</div></td>`; }).join("")}
+        ${cyc ? "" : `<td class="small">${esc(r.cycle || "not cyclical")}</td>`}<td class="num">${r.buffett_passed}/${r.buffett_of}</td><td class="num">${r.graham_passed}/${r.graham_of}</td></tr>`).join("")}</tbody></table></div>
+      <p class="tiny">Each measure is ranked within this sector; the ranks are added and the lowest total comes first. Margin of safety uses the Graham/Buffett values that suit this industry. Left out: companies whose P/E below 4 suggests one-off gains or pre-demerger figures. ${rows.length} companies. Built ${ago(m.built_at)}. Not investment advice.</p>`
+      : `<p class="small">No valued companies in this sector yet (statements are still being collected).</p>`;
+  };
+  document.getElementById("sec-liq").addEventListener("change", draw);
+  draw();
+}
+
 // ---------- investing (fundamental scorecards from the page database)
 let SCORES = null;
 async function loadScores() {
@@ -1149,6 +1201,7 @@ function renderTrading() {
     stocks.forEach((s) => (S.byIsin[s.i] = s));
     const live = stocks.some((s) => s.lp != null);
     document.getElementById("fresh").textContent = `Updated ${when(meta.generated_at)}${live ? " · today's prices" : ` · closing prices of ${when(meta.prices_as_of.NSE)}`}`;
+    drawSectorNav();
     route();
   } catch (e) {
     app().innerHTML = `<section class="panel">The market data in this page could not be read (${esc(e.message)}).</section>`;
