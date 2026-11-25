@@ -89,6 +89,19 @@ input[type=search] { flex: 1 1 240px; min-width: 0 }
 .bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--soft); margin-top: 8px }
 .bar span { display: block } .bar .t { background: var(--up) } .bar .h { background: var(--down) }
 .loading { color: var(--muted) }
+.live-box { border: 2px solid var(--accent); border-radius: 8px; background: var(--panel); padding: 14px; display: grid; gap: 12px }
+.live-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; padding: 8px 16px }
+.steps { font-size: 13px; color: var(--muted) } .spinner { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--accent); border-right-color: transparent; animation: spin 1s linear infinite; margin-right: 6px; vertical-align: -1px }
+@keyframes spin { to { transform: rotate(360deg) } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none } }
+.grade { font: 700 34px/1 var(--mono); padding: 8px 14px; border-radius: 8px; background: var(--soft) }
+.grade.A, .grade.B { background: var(--up-bg); color: var(--up) } .grade.D, .grade.E { background: var(--down-bg); color: var(--down) }
+.qa { display: grid; gap: 10px } .qa .q { font-weight: 600 } .qa .a { white-space: pre-wrap } .qa .s { font-size: 11px }
+details.sec { border-top: 1px solid var(--line); padding-top: 8px } details.sec summary { cursor: pointer; font-weight: 600 }
+.kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px }
+.idea { border-left: 4px solid var(--accent); background: var(--soft); padding: 10px 12px; border-radius: 4px }
+.idea.up { border-left-color: var(--up) } .idea.down { border-left-color: var(--down) }
 footer { font-size: 12px; color: var(--muted); padding-block: 0 30px }
 @media (prefers-reduced-motion: no-preference) { .tile, .card { transition: border-color .15s } }
 </style>
@@ -99,6 +112,7 @@ footer { font-size: 12px; color: var(--muted); padding-block: 0 30px }
     <a href="#market" data-tab="market">Market</a>
     <a href="#industries" data-tab="industries">Industries</a>
     <a href="#economy" data-tab="economy">Economy</a>
+    <a href="#trading" data-tab="trading">Trading</a>
   </nav>
   <span class="fresh" id="fresh">Loading data…</span>
 </div></header>
@@ -145,7 +159,7 @@ function spark(points, w = 96, h = 26) {
 }
 
 // ---------- routing
-const routes = { market: renderMarket, industries: renderIndustries, economy: renderEconomy };
+const routes = { market: renderMarket, industries: renderIndustries, economy: renderEconomy, trading: renderTrading };
 function route() {
   const h = location.hash.slice(1) || "market";
   document.querySelectorAll("nav.tabs a").forEach((a) => a.toggleAttribute("aria-current", false));
@@ -287,7 +301,9 @@ async function renderStock(isin) {
         <div class="num ${cls(c.ch)}">${pct(c.ch)}</div>
         <div class="tiny">${c.live ? '<span class="live-dot"></span>' : ""}${esc(c.src || NA)} · ${when(c.at)}</div></div>
     </div>
-    <section class="verdict ${tone}"><div class="eyebrow">Summary</div>
+    <section class="live-box" id="live"><div class="live-head"><div><h2>Live analysis</h2><p class="sub">Claude collects fresh prices, financials, the option chain and news, reads the company's annual report, presentations and con calls, and answers your full framework. Takes about 5–10 minutes.</p></div>
+      <button class="btn primary" id="analyse">Analyse now</button></div><div id="live-body"></div></section>
+    <section class="verdict ${tone}"><div class="eyebrow">Quick view (from the last update)</div>
       <p class="big">${esc(s.n)}: the economic backdrop for ${esc(m.label.toLowerCase())} is ${mood}.</p>
       <ul>${reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>
       <div class="chips"><span class="chip">Economy: ${share == null ? NA : Math.round(share * 100) + "% tailwinds"}</span><span class="chip">Company financials: need Upstox login</span><span class="chip">1-year price: ${st && st.return_1y != null ? pct(st.return_1y) : NA}</span></div>
@@ -305,6 +321,7 @@ async function renderStock(isin) {
     <section class="panel"><h2>Company financials</h2>
       <div class="notice">Financial statements, ratios (P/E, ROE, ROCE), shareholding, Graham's checks and valuation come from Upstox and need a personal Upstox login, which this hosted page cannot hold. They appear in the version of the portal you run on your own computer.</div></section>
     ${newsPanel((S.news || {})[isin], "News")}`;
+  liveReport(isin, s);
   if (series) {
     drawChart(series);
     document.querySelectorAll("#ranges .btn").forEach((b) => b.addEventListener("click", () => {
@@ -361,6 +378,195 @@ function renderEconomy() {
   app().innerHTML = `<div><h1>Economy</h1><p class="sub">Every indicator the portal tracks, with its 12-month trend.</p></div>
     <section class="panel"><div class="scroll"><table style="min-width:640px"><thead><tr><th>Indicator</th><th class="num">Latest</th><th>Trend</th><th>Change</th><th>Source</th></tr></thead><tbody>${
     S.economy.map((i) => `<tr><td>${esc(i.label)}</td><td class="num">${esc(i.latest_text || NA)}<div class="tiny">${i.latest_date ? when(i.latest_date) : ""}</div></td><td>${spark(i.trend)}</td><td class="small">${esc(i.change_text || "—")}</td><td class="tiny">${esc(i.source)}</td></tr>`).join("")}</tbody></table></div></section>`;
+}
+
+
+// ---------- live analysis (db + Claude Code Remote connector)
+const ANALYST_TRIGGER = "trig_01HnnKsTAojbDkKoaoK3T4g4";
+let DB = null, MCP = null, unsubLive = null;
+const caps = (async () => {
+  try { DB = await window.claude?.use?.("db"); } catch (e) { DB = null; }
+  try { MCP = await window.claude?.use?.("mcp"); } catch (e) { MCP = null; }
+})();
+const ago = (iso) => { if (!iso) return ""; const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : when(iso); };
+
+async function startJob(docPath, text, btn, body) {
+  btn.disabled = true;
+  try {
+    await caps;
+    if (!DB || !MCP) { body.innerHTML = `<p class="notice">Live analysis works when this page is opened on claude.ai while signed in (it uses your Claude account to start the analysis).</p>`; btn.disabled = false; return; }
+    await DB.doc(docPath).set({ status: "queued", step: "Starting a Claude analysis session…", requested_at: new Date().toISOString() });
+    await MCP.callTool("Claude Code Remote", "fire_trigger", { trigger_id: ANALYST_TRIGGER, text });
+  } catch (e) {
+    const code = e && e.code;
+    const msg = code === "not_in_manifest" || code === "approval_required" ? "Allow the Claude Code Remote connector for this page when asked, then press the button again."
+      : code === "server_not_connected" || code === "needs_reauth" ? "Connect the Claude Code Remote connector in claude.ai Settings → Connectors, then try again."
+      : `Could not start the analysis (${esc(code || e.message || e)}).`;
+    try { await DB.doc(docPath).set({ status: "failed", error: msg, updated_at: new Date().toISOString() }); } catch (_) { body.innerHTML = `<p class="notice">${msg}</p>`; }
+    btn.disabled = false;
+  }
+}
+
+function watchDoc(docPath, render) {
+  if (unsubLive) { unsubLive(); unsubLive = null; }
+  caps.then(() => {
+    if (!DB) { render(null, "nodb"); return; }
+    unsubLive = DB.doc(docPath).onSnapshot((snap) => render(snap.exists ? snap.data() : null), () => render(null, "error"));
+  });
+}
+
+function liveReport(isin, s) {
+  const btn = document.getElementById("analyse"), body = document.getElementById("live-body");
+  btn.addEventListener("click", () => startJob(`reports/${isin}`, `ANALYSE ${isin} ${s.s}`, btn, body));
+  watchDoc(`reports/${isin}`, (d, err) => {
+    if (location.hash.slice(7) !== isin) return;
+    if (err === "nodb") { body.innerHTML = `<p class="tiny">Open this page on claude.ai (signed in) to use live analysis.</p>`; return; }
+    if (!d) { body.innerHTML = `<p class="tiny">No live analysis yet for ${esc(s.s)}. Press “Analyse now”.</p>`; btn.disabled = false; return; }
+    const busy = d.status === "queued" || d.status === "working";
+    btn.disabled = busy; btn.textContent = busy ? "Analysing…" : "Analyse again";
+    let html = busy ? `<p class="steps"><span class="spinner"></span>${esc(d.step || "Working…")} <span class="tiny">(${ago(d.updated_at || d.requested_at)})</span></p>` : "";
+    if (d.status === "failed") html += `<p class="notice">The analysis stopped: ${esc(d.error || "unknown error")}</p>`;
+    if (d.quant) html += renderQuant(d.quant, d.framework);
+    if (d.framework) html += renderFramework(d.framework);
+    body.innerHTML = html;
+    if (d.quant && d.quant.chart) drawTechChart(d.quant);
+  });
+}
+
+function kv(k, v) { return `<div class="stat"><div class="k">${esc(k)}</div><div class="v">${v}</div></div>`; }
+function renderQuant(q, fw) {
+  const r = q.rating || {}, fr = (fw && fw.final_rating) || {};
+  const grade = fr.grade || r.grade, score = fr.score ?? r.score;
+  const t = q.technicals || {}, idea = q.trade_idea, mf = q.magic_formula || {}, iv = q.intrinsic_value || {}, v = q.valuation;
+  const parts = Object.entries(r.parts || {}).map(([k, p]) => `<tr><td>${esc(k.replace("_", " "))}</td><td class="num">${p.score == null ? NA : Math.round(p.score * 100)}</td><td class="small">${esc(p.note)}</td></tr>`).join("");
+  let h = `<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><span class="grade ${esc(grade || "")}">${esc(grade || "—")}</span>
+    <div><div class="name">Rating ${score ?? NA}/100 ${fr.grade && fr.grade !== r.grade ? `<span class="tiny">(numbers alone: ${esc(r.grade)} ${r.score})</span>` : ""}</div>
+    <div class="small">Live price ₹${price(q.live_price && q.live_price.price)} · ${esc(q.live_price && q.live_price.source)} · analysed ${ago(q.generated_at)}</div>
+    ${fw && fw.summary ? `<p style="margin:6px 0 0">${esc(fw.summary)}</p>` : ""}</div></div>
+    <details class="sec"><summary>How the rating is built</summary><div class="scroll"><table><tbody>${parts}</tbody></table></div><p class="tiny">${esc(r.note || "")}${fw && fw.rating_adjustment ? " Research adjustment: " + esc(fw.rating_adjustment.points) + " points — " + esc(fw.rating_adjustment.reason) : ""}</p></details>`;
+
+  // Technicals
+  if (t.available) {
+    const lv = (arr) => (arr || []).map((l) => `₹${price(l.level)} <span class="tiny">(${l.touches} touch${l.touches === 1 ? "" : "es"}, ${pct(l.distance_pct)})</span>`).join("<br>") || NA;
+    h += `<details class="sec" open><summary>Chart & indicators — ${esc(t.bias)}</summary>
+      <div class="chart" id="techchart"></div>
+      <div class="grid kv">${kv("Support", lv(t.supports))}${kv("Resistance", lv(t.resistances))}
+        ${kv("20 / 50 / 200-day avg", `${price(t.moving_averages.sma20)} / ${price(t.moving_averages.sma50)} / ${price(t.moving_averages.sma200)}`)}
+        ${kv("RSI (14)", t.rsi14 ?? NA)}${kv("MACD / signal", t.macd ? `${t.macd.macd} / ${t.macd.signal}` : NA)}
+        ${kv("ATR (14)", t.atr14 ? `₹${t.atr14} (${t.atr_pct}%)` : NA)}${kv("Bollinger", t.bollinger ? `${price(t.bollinger.lower)} – ${price(t.bollinger.upper)}` : NA)}
+        ${kv("Volume vs 20-day avg", t.volume_ratio ? t.volume_ratio + "×" : NA)}
+        ${kv("Pivot / R1 / S1", `${price(t.pivots.pivot)} / ${price(t.pivots.r1)} / ${price(t.pivots.s1)}`)}</div>
+      <ul class="small">${t.signals.map((x) => `<li><span class="pill ${x.effect === "bullish" ? "good" : x.effect === "bearish" ? "bad" : "na"}">${esc(x.effect)}</span> ${esc(x.text)}</li>`).join("")}</ul></details>`;
+  }
+  // Options & trade idea
+  if (q.fno && q.fno.has_fno) {
+    const oc = q.option_chain || {};
+    h += `<details class="sec" open><summary>Futures & options — trade idea</summary>`;
+    if (idea) {
+      const o = idea.option;
+      h += `<div class="idea ${idea.direction || ""}"><div class="name">${esc(idea.view)}</div>
+        ${o ? `<p>${esc(idea.plan)}</p><div class="grid kv">${kv("Option", `${esc(o.type)} ${o.strike} · ${esc(o.expiry)}`)}${kv("Premium", "₹" + price(o.premium))}${kv("Lot size", vol(o.lot_size))}${kv("Cost / max loss per lot", "₹" + price(o.cost_per_lot))}${kv("Break-even", "₹" + price(o.breakeven))}${kv("Delta / IV", `${o.delta ?? NA} / ${o.iv ?? NA}%`)}${kv("Time decay per day", o.theta_per_day != null ? "₹" + o.theta_per_day : NA)}${kv("Probability of profit", o.probability_of_profit != null ? o.probability_of_profit + "%" : NA)}</div>` : ""}
+        ${(idea.cautions || []).map((c) => `<p class="small down">${esc(c)}</p>`).join("")}
+        <div class="scroll"><table><thead><tr><th>Evidence</th><th class="num">Score (−1 to +1)</th><th>Note</th></tr></thead><tbody>${idea.evidence.map((e) => `<tr><td>${esc(e.factor)}</td><td class="num ${cls(e.score)}">${e.score}</td><td class="small">${esc(e.note)}</td></tr>`).join("")}</tbody></table></div>
+        <p class="tiny">${esc(idea.label)}</p></div>`;
+    }
+    if (oc.available) {
+      h += `<p class="small">${(oc.reading || []).map(esc).join(" ")} Max pain ₹${price(oc.max_pain)} · ATM implied volatility ${oc.atm_iv ?? NA}% · expiry ${esc(oc.expiry)}</p>
+        <div class="scroll"><table style="min-width:560px"><thead><tr><th class="num">Call price</th><th class="num">Call OI</th><th class="num">Strike</th><th class="num">Put price</th><th class="num">Put OI</th></tr></thead><tbody>${(oc.strikes || []).map((r) => `<tr${r.strike === oc.atm_strike ? ' style="background:var(--soft)"' : ""}><td class="num">${price(r.ce_ltp)}</td><td class="num">${vol(r.ce_oi)}</td><td class="num"><b>${r.strike}</b></td><td class="num">${price(r.pe_ltp)}</td><td class="num">${vol(r.pe_oi)}</td></tr>`).join("")}</tbody></table></div>`;
+    }
+    h += `</details>`;
+  }
+  // Commodity & market links
+  if ((q.links || []).length) {
+    h += `<details class="sec"><summary>Links to commodities, the rupee and the market</summary><div class="scroll"><table><thead><tr><th>Factor</th><th class="num">Correlation</th><th>Reading</th><th>Period</th></tr></thead><tbody>${q.links.map((l) => `<tr><td>${esc(l.factor)}</td><td class="num ${cls(l.correlation)}">${l.correlation}</td><td class="small">${esc(l.reading)}</td><td class="tiny">${esc(l.period)}</td></tr>`).join("")}</tbody></table></div><p class="tiny">Correlation runs from −1 (moves opposite) to +1 (moves together). Sources: Upstox prices, FRED.</p></details>`;
+  }
+  // Fundamentals
+  const f = q.financials;
+  if (f) {
+    const rows = f.periods.slice(0, 5);
+    const line = (name, fn) => `<tr><td>${name}</td>${rows.map((x) => `<td class="num">${fn(x)}</td>`).join("")}${(q.projection.years || []).slice(0, 2).map((p) => `<td class="num tiny">${name === "Revenue (₹ Cr)" ? int.format(p.revenue) : name === "Net profit (₹ Cr)" ? (p.net_profit != null ? int.format(p.net_profit) : NA) : name === "EPS (₹)" ? (p.eps ?? NA) : ""}</td>`).join("")}</tr>`;
+    h += `<details class="sec" open><summary>Financials, ratios and projection</summary><div class="scroll"><table style="min-width:640px"><thead><tr><th></th>${rows.map((x) => `<th class="num">${esc(x.period)}</th>`).join("")}${(q.projection.years || []).slice(0, 2).map((p) => `<th class="num">${esc(p.period)}</th>`).join("")}</tr></thead><tbody>
+      ${line("Revenue (₹ Cr)", (x) => x.revenue != null ? int.format(x.revenue) : NA)}${line("Operating profit (₹ Cr)", (x) => x.operating_profit != null ? int.format(x.operating_profit) : NA)}${line("Net profit (₹ Cr)", (x) => x.net_profit != null ? int.format(x.net_profit) : NA)}${line("EPS (₹)", (x) => x.eps ?? NA)}
+      ${line("Net margin", (x) => x.net_margin_pct != null ? x.net_margin_pct + "%" : NA)}${line("Return on equity", (x) => x.roe_pct != null ? x.roe_pct + "%" : NA)}${line("Cash from ops ÷ profit", (x) => x.cfo_to_profit ?? NA)}${line("Current ratio", (x) => x.current_ratio ?? NA)}${line("Liabilities ÷ equity", (x) => x.liabilities_to_equity ?? NA)}</tbody></table></div>
+      <p class="tiny">${esc(q.projection.method || "")} Projections are a trend extension, not a forecast.</p></details>`;
+  }
+  if (v || iv.available || mf.applies !== undefined) {
+    h += `<details class="sec" open><summary>Valuation, fair value and Magic Formula</summary><div class="grid kv">
+      ${(v ? v.metrics : []).map((m) => kv(m.name, `${m.current ?? NA} <span class="tiny">sector ${m.sector ?? NA} · own avg ${m.own_avg ?? NA}</span>`)).join("")}
+      ${kv("Valuation", esc(v ? v.label : NA))}
+      ${kv("Estimated fair value", iv.available ? `₹${price(iv.value)} <span class="tiny">(₹${price(iv.low)}–${price(iv.high)}, ${pct(iv.upside_pct)} vs price)</span>` : esc(iv.reason || NA))}
+      ${kv("Magic Formula", mf.available ? `ROC ${mf.roc_pct}% · EY ${mf.earnings_yield_pct}%` : esc(mf.reason || NA))}</div>
+      ${iv.available ? `<p class="tiny">${esc(iv.method)}</p>` : ""}${mf.available ? `<p class="small">${esc(mf.verdict)} (rank ${mf.peer_rank} of ${mf.peer_count} among competitors). <span class="tiny">${esc(mf.note)}</span></p>` : ""}</details>`;
+  }
+  if (q.graham) {
+    h += `<details class="sec"><summary>Graham's defensive investor checks</summary><ul class="small">${q.graham.map((g) => `<li><span class="pill ${g.status === "pass" ? "good" : g.status === "fail" ? "bad" : "na"}">${esc(g.status.replace("_", " "))}</span> <b>${esc(g.name)}</b>: ${esc(g.value || NA)} <span class="tiny">(${esc(g.rule)})${g.note ? " " + esc(g.note) : ""}</span></li>`).join("")}</ul></details>`;
+  }
+  if (q.shareholding) {
+    const sh = q.shareholding;
+    h += `<details class="sec"><summary>Shareholding</summary><div class="scroll"><table><thead><tr><th>Holder</th>${sh.periods.map((p) => `<th class="num">${esc(p)}</th>`).join("")}</tr></thead><tbody>${sh.rows.map((r) => `<tr><td>${esc(r.category)}</td>${r.values.map((x) => `<td class="num">${x.pct ?? "—"}%</td>`).join("")}</tr>`).join("")}</tbody></table></div></details>`;
+  }
+  if ((q.risks || []).length) h += `<details class="sec"><summary>Risks from the numbers</summary><ul class="small">${q.risks.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></details>`;
+  return h;
+}
+
+function renderFramework(fw) {
+  let h = "";
+  if (fw.management || fw.capital_allocation || fw.strategy) {
+    h += `<div class="grid kv">${fw.management ? kv("Management", `${esc(fw.management.grade)}<div class="tiny">${esc(fw.management.reason)}</div>`) : ""}${fw.capital_allocation ? kv("Capital allocation", `${esc(fw.capital_allocation.grade)}<div class="tiny">${esc(fw.capital_allocation.reason)}</div>`) : ""}${fw.strategy ? kv("Strategy", esc(fw.strategy)) : ""}</div>`;
+  }
+  for (const sec of fw.sections || []) {
+    h += `<details class="sec" open><summary>${esc(sec.title)}</summary><div class="qa">${(sec.items || []).map((it) => `<div><div class="q">${esc(it.question)}</div><div class="a">${esc(it.answer)}</div>${(it.sources || []).length ? `<div class="s">${it.sources.map((x) => { const u = safeUrl(x.url); return u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(x.title || u)}</a>` : esc(x.title); }).join(" · ")}</div>` : ""}</div>`).join("")}</div></details>`;
+  }
+  if (fw.trade_view) h += `<details class="sec" open><summary>Trading view</summary><p>${esc(fw.trade_view)}</p></details>`;
+  h += `<p class="tiny" style="font-weight:600">Screening and research output only. Not investment advice.</p>`;
+  return h;
+}
+
+function drawTechChart(q) {
+  const el = document.getElementById("techchart"); if (!el) return;
+  const c = q.chart.map((r) => ({ d: r[0], o: r[1], h: r[2], l: r[3], c: r[4] }));
+  const t = q.technicals, W = 760, H = 300, L = 8, R = 70, T = 10, B = 24;
+  const levels = [...(t.supports || []), ...(t.resistances || [])];
+  const lo = Math.min(...c.map((x) => x.l), ...levels.map((l) => l.level)), hi = Math.max(...c.map((x) => x.h), ...levels.map((l) => l.level));
+  const pad = (hi - lo) * 0.04, y0 = lo - pad, y1 = hi + pad;
+  const X = (i) => L + (i / (c.length - 1)) * (W - L - R), Y = (v) => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
+  const bw = Math.max(1, (W - L - R) / c.length * 0.6);
+  const candles = c.map((x, i) => { const up = x.c >= x.o, col = up ? "var(--up)" : "var(--down)"; return `<line x1="${X(i).toFixed(1)}" x2="${X(i).toFixed(1)}" y1="${Y(x.h).toFixed(1)}" y2="${Y(x.l).toFixed(1)}" stroke="${col}"/><rect x="${(X(i) - bw / 2).toFixed(1)}" y="${Y(Math.max(x.o, x.c)).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1, Math.abs(Y(x.o) - Y(x.c))).toFixed(1)}" fill="${col}"/>`; }).join("");
+  const ma = (n) => { const pts = []; for (let i = n - 1; i < c.length; i++) { let s = 0; for (let j = i - n + 1; j <= i; j++) s += c[j].c; pts.push(`${pts.length ? "L" : "M"}${X(i).toFixed(1)},${Y(s / n).toFixed(1)}`); } return pts.join(""); };
+  const lines = levels.map((l) => `<line x1="${L}" x2="${W - R}" y1="${Y(l.level).toFixed(1)}" y2="${Y(l.level).toFixed(1)}" stroke="${l.kind === "support" ? "var(--up)" : "var(--down)"}" stroke-dasharray="5 4" stroke-width="1.2"/><text x="${W - R + 4}" y="${(Y(l.level) + 4).toFixed(1)}" font-size="10.5" fill="${l.kind === "support" ? "var(--up)" : "var(--down)"}" font-family="var(--mono)">${inr.format(l.level)}</text>`).join("");
+  const months = c.filter((x, i) => i === 0 || x.d.slice(5, 7) !== c[i - 1].d.slice(5, 7)).filter((_, i) => i % 2 === 0);
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Candlestick chart with support and resistance">${lines}${candles}
+    <path d="${ma(50)}" fill="none" stroke="var(--accent)" stroke-width="1.4"/><path d="${ma(20)}" fill="none" stroke="var(--muted)" stroke-width="1" stroke-dasharray="2 2"/>
+    ${months.map((x) => `<text x="${X(c.indexOf(x)).toFixed(1)}" y="${H - 6}" font-size="10" fill="var(--muted)">${new Date(x.d).toLocaleDateString("en-IN", { month: "short" })}</text>`).join("")}</svg>
+    <p class="tiny">Last 12 months, daily candles. Green dashed = support, red dashed = resistance. Solid line = 50-day average, dotted = 20-day.</p>`;
+}
+
+// ---------- trading tab (F&O scan)
+function renderTrading() {
+  app().innerHTML = `<div><h1>Trading</h1><p class="sub">Scan all ${int.format(218)} stocks that have futures & options: chart signals, live prices, option chains and news, with an option trade idea where the evidence lines up.</p></div>
+    <section class="live-box"><div class="live-head"><div><h2>F&O scan</h2><p class="sub">Runs live in about 3–5 minutes.</p></div><button class="btn primary" id="scan">Scan F&O now</button></div><div id="scan-body"></div></section>`;
+  const btn = document.getElementById("scan"), body = document.getElementById("scan-body");
+  btn.addEventListener("click", () => startJob("scans/latest", "SCAN", btn, body));
+  watchDoc("scans/latest", (d, err) => {
+    if (location.hash.slice(1) !== "trading") return;
+    if (err === "nodb") { body.innerHTML = `<p class="tiny">Open this page on claude.ai (signed in) to run scans.</p>`; return; }
+    if (!d) { body.innerHTML = `<p class="tiny">No scan yet. Press “Scan F&O now”.</p>`; return; }
+    const busy = d.status === "queued" || d.status === "working"; btn.disabled = busy; btn.textContent = busy ? "Scanning…" : "Scan again";
+    let h = busy ? `<p class="steps"><span class="spinner"></span>${esc(d.step || "Working…")}</p>` : "";
+    if (d.status === "failed") h += `<p class="notice">The scan stopped: ${esc(d.error || "unknown error")}</p>`;
+    const sc = d.scan;
+    if (sc) {
+      h += `<p class="small">Scanned ${sc.scanned} stocks ${ago(sc.generated_at)}. ${d.commentary ? esc(d.commentary) : ""}</p>`;
+      h += sc.ideas.map((x) => { const o = x.idea.option; return `<div class="idea ${x.idea.direction}"><div class="name"><a href="#stock-${esc(x.isin)}">${esc(x.symbol)}</a> ₹${price(x.price)} — ${esc(x.idea.view)} <span class="tiny">score ${x.idea.score}</span></div>
+        <p class="small">${esc(x.idea.plan)}</p>
+        <p class="tiny">RSI ${x.rsi ?? NA} · support ${x.supports.map(price).join(", ") || NA} · resistance ${x.resistances.map(price).join(", ") || NA} · PCR ${x.option_chain.pcr ?? NA} · IV ${x.option_chain.atm_iv ?? NA}%</p>
+        <ul class="tiny">${x.signals.slice(0, 3).map((t) => `<li>${esc(t)}</li>`).join("")}${(x.idea.cautions || []).map((c) => `<li class="down">${esc(c)}</li>`).join("")}</ul>
+        ${(x.headlines || []).length ? `<p class="tiny">News: ${x.headlines.map((n) => `<span class="pill ${esc(n.sentiment)}">${esc(n.sentiment)}</span> ${esc(n.title)}`).join(" · ")}</p>` : ""}</div>`; }).join("") || `<p>No setups where the evidence lines up right now.</p>`;
+      h += `<details class="sec"><summary>All F&O stocks by chart signal</summary><div class="scroll"><table><thead><tr><th>Stock</th><th class="num">Price</th><th>Bias</th><th class="num">Score</th><th class="num">RSI</th></tr></thead><tbody>${sc.overview.map((x) => `<tr><td><a href="#stock-${esc(x.isin)}">${esc(x.symbol)}</a></td><td class="num">${price(x.price)}</td><td><span class="pill ${x.bias === "bullish" ? "good" : x.bias === "bearish" ? "bad" : "na"}">${esc(x.bias)}</span></td><td class="num">${x.score}</td><td class="num">${x.rsi ?? NA}</td></tr>`).join("")}</tbody></table></div></details>
+        <p class="tiny" style="font-weight:600">${esc(sc.label)}</p>`;
+    }
+    body.innerHTML = h;
+  });
 }
 
 // ---------- boot (all data is embedded in this page by the refresh job)

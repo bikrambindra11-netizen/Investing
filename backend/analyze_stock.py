@@ -12,9 +12,20 @@ from datetime import datetime, timezone
 os.environ.setdefault("RUN_JOBS", "false")
 os.environ.setdefault("UPSTOX_ACCESS_TOKEN", "proxy-injected")  # the proxy replaces it with the real token
 
-from backend.app import analysis, jobs, macro  # noqa: E402
-from backend.app.db import Instrument, SessionLocal, init_db  # noqa: E402
-from backend.sources import upstox_bulk, upstox_fundamentals  # noqa: E402
+from backend.app import analysis, correlations, derivatives, jobs, macro, technicals  # noqa: E402
+from backend.app.db import DailyPrice, Instrument, SessionLocal, init_db  # noqa: E402
+from backend.sources import upstox_bulk, upstox_candles, upstox_fundamentals  # noqa: E402
+
+
+def candles_with_today(key: str) -> list[dict]:
+    """Daily candles plus the latest exchange close-file day when Upstox's history lags behind."""
+    c = upstox_candles._fetch(key, jobs.today_ist(), None)
+    with SessionLocal() as s:
+        p = s.query(DailyPrice).filter(DailyPrice.instrument_key == key).order_by(DailyPrice.trade_date.desc()).first()
+    if p and c and p.trade_date.isoformat() > c[-1]["date"] and p.close:
+        c.append({"date": p.trade_date.isoformat(), "open": p.open or p.close, "high": p.high or p.close,
+                  "low": p.low or p.close, "close": p.close, "volume": p.volume or 0})
+    return c
 
 FINANCIAL = {"banks", "nbfc"}
 EXCLUDED_FROM_MAGIC_FORMULA = FINANCIAL | {"power"}  # Greenblatt leaves out financials and utilities
@@ -171,17 +182,48 @@ def main() -> None:
                         "note": f"{st.get('return_1y')}% over 1 year" if st.get("available") else "not available"},
     }
 
+    # Technicals, options, commodity links and a trade idea
+    candles = candles_with_today(primary.instrument_key)
+    tech = technicals.analyse(candles, price)
+    fno = derivatives.fno_universe().get(primary.instrument_key)
+    chain = {"available": False}
+    if fno and fno["has_options"]:
+        exp = derivatives.pick_expiry(fno["expiries"], jobs.today_ist())
+        chain = derivatives.read_chain(derivatives.option_chain(primary.instrument_key, exp)) if exp else chain
+    nifty = upstox_candles._fetch("NSE_INDEX|Nifty 50", jobs.today_ist(), None)
+    links = correlations.analyse(candles, nifty, jobs.today_ist())
+    rate = rating(parts)
+    idea = derivatives.trade_idea(primary.symbol, fno["lot_size"], tech, chain, derivatives.news_score(page["news"]["items"]),
+                                  rate["grade"], m["score"]["share_tailwinds"]) if fno else None
+    chain_out = {k: v for k, v in chain.items() if k != "rows"}
+    if chain.get("available"):  # strikes near the money, for display
+        near = sorted(chain["rows"], key=lambda r: abs(r["strike"] - chain["spot"]))[:12]
+        chain_out["strikes"] = [{"strike": r["strike"], "ce_ltp": r["ce"].get("ltp"), "ce_oi": r["ce"].get("oi"),
+                                 "ce_iv": r["ce_g"].get("iv"), "pe_ltp": r["pe"].get("ltp"), "pe_oi": r["pe"].get("oi"),
+                                 "pe_iv": r["pe_g"].get("iv")} for r in sorted(near, key=lambda r: r["strike"])]
+
     page.pop("candles", None)
     result = {
+        "technicals": tech,
+        "chart": [[c["date"], c["open"], c["high"], c["low"], c["close"], c["volume"]] for c in candles[-260:]],
+        "fno": {"has_fno": bool(fno), "lot_size": fno["lot_size"] if fno else None,
+                "expiries": fno["expiries"][:3] if fno else []},
+        "option_chain": chain_out,
+        "trade_idea": idea,
+        "links": links,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "isin": isin, "symbol": primary.symbol, "name": primary.name,
         "live_price": {"price": price, "source": "Upstox market quote" if ltp else page["quote"]["price_source"],
                        "at": datetime.now(timezone.utc).isoformat(timespec="seconds")},
         **page,
-        "projection": proj, "intrinsic_value": iv, "magic_formula": mf, "rating": rating(parts),
+        "projection": proj, "intrinsic_value": iv, "magic_formula": mf, "rating": rate,
     }
     with open(out_path, "w") as fh:
         json.dump(result, fh, default=str)
+    # Fields to merge into the page's live report document (reports/<ISIN>)
+    with open(out_path + ".db.json", "w") as fh:
+        json.dump({"status": "working", "step": "Numbers done. Now reading the annual report, investor presentation and con calls…",
+                   "updated_at": result["generated_at"], "quant": result}, fh, default=str)
     print(f"wrote {out_path}: {result['symbol']} rating {result['rating']['grade']} ({result['rating']['score']}),"
           f" financials {'yes' if fin else 'no'}, size {os.path.getsize(out_path) // 1024} KB")
 

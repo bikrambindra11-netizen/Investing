@@ -2,6 +2,7 @@
 
 All money values are in ₹ crore. Periods look like "Mar 2025".
 """
+import time
 from datetime import timedelta
 
 import httpx
@@ -29,8 +30,12 @@ class NeedsLogin(Exception):
 
 
 def _get(isin: str, path: str, params: dict, token: str) -> object:
-    r = httpx.get(BASE.format(isin=isin, path=path), params=params, timeout=30,
-                  headers={"Accept": "application/json", "Authorization": f"Bearer {token}"})
+    for attempt in range(5):  # wait and retry when Upstox says "too many requests"
+        r = httpx.get(BASE.format(isin=isin, path=path), params=params, timeout=30,
+                      headers={"Accept": "application/json", "Authorization": f"Bearer {token}"})
+        if r.status_code != 429:
+            break
+        time.sleep(2 * (attempt + 1))
     if r.status_code in (401, 403):
         raise NeedsLogin(r.text[:200])
     if r.status_code >= 400:
