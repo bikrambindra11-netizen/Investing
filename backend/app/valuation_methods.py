@@ -285,7 +285,7 @@ def cycle_position(industry: str, fin: dict, quarterly: dict | None = None, b: d
         m = [r["operating_margin_pct"] for r in rows]
         pos = _range_position(m, m[0])
         trend = "rising" if m[0] > m[1] else "falling"
-        ev.append(f"Operating margin {m[0]:.1f}% in {rows[0]['period']}: {'the highest' if pos == 1 else 'the lowest' if pos == 0 else f'{pos * 100:.0f}% of the way from lowest'} "
+        ev.append(f"Operating margin {m[0]:.1f}% in {rows[0]['period']}: {'unchanged across' if pos is None else 'the highest' if pos == 1 else 'the lowest' if pos == 0 else f'{pos * 100:.0f}% of the way from lowest'} "
                   f"of the last {len(m)} years ({min(m):.1f}%–{max(m):.1f}%), {trend} from {m[1]:.1f}%.")
         if pos is not None:
             score += pos * 2 - 1

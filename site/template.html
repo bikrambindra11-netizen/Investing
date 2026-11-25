@@ -1078,8 +1078,11 @@ async function renderSector(id) {
   const idx = await valueIndex(), m = VAL.meta;
   const body = document.getElementById("sec-body"); if (!body) return;
   if (!idx) { body.innerHTML = `<p class="notice">Rankings are read from this page's database: open the page on claude.ai while signed in.</p>`; return; }
-  const cfg = (m.sectors || {})[key] || { factors: ["mos"], why: "Ranked on margin of safety." };
-  document.getElementById("sec-why").textContent = `How this sector is ranked: ${cfg.why}`;
+  const base = (m.sectors || {})[key] || { factors: ["mos"], why: "" }, fit = (m.fit || {})[key];
+  // Ratios that fit this sector + Graham/Buffett margin of safety + cycle stage for cyclicals
+  Object.entries(m.metrics || {}).forEach(([id, d]) => { if (!FACTOR[id]) FACTOR[id] = { label: d.label, hi: d.hi, get: (r) => (r.ratios || {})[id] ?? null, fmt: (v) => (d.fmt === "%" ? (id === "dcf_upside" ? pct(v) : v + "%") : v + "×") }; });
+  const cfg = { factors: [...(fit ? fit.metrics : []), "mos", ...(base.factors.includes("cycle") ? ["cycle"] : [])] };
+  document.getElementById("sec-why").innerHTML = `<b>Ratios that fit this sector:</b> ${esc(fit ? fit.why : base.why)}${fit && fit.avoid.length ? `<br><b>Not used here:</b> ${fit.avoid.map(esc).join("; ")}.` : ""}<br><b>Also ranked on:</b> Graham/Buffett margin of safety${base.factors.includes("cycle") ? " and the cycle stage (earlier in the cycle ranks better)" : ""}.`;
   const draw = () => {
     const liq = document.getElementById("sec-liq").value === "1";
     const rows = idx.filter((r) => r.industry_id === key && !r.flagged && (!liq || r.turnover_cr >= 1));
@@ -1108,7 +1111,7 @@ async function renderSector(id) {
         ${cyc ? "" : `<td class="small">${esc(r.cycle || "not cyclical")}</td>`}
         <td class="num">${mfx ? `<span class="tiny">n/a (Greenblatt excludes)</span>` : mfRank[r.isin] ? `<b>${mfRank[r.isin].pos}</b> <span class="tiny">of ${nMf}</span><div class="tiny">ROC #${mfRank[r.isin].roc} + EY #${mfRank[r.isin].ey}${r.mf_rank ? ` · all-market #${r.mf_rank}` : ""}</div>` : "—"}</td>
         <td class="num">${r.buffett_passed}/${r.buffett_of}</td><td class="num">${r.graham_passed}/${r.graham_of}</td></tr>`).join("")}</tbody></table></div>
-      <p class="tiny">Each measure is ranked within this sector; the ranks are added and the lowest total comes first. Magic Formula combined rank: Greenblatt's method within this sector (rank on return on capital + rank on earnings yield, lowest sum = 1), with the all-market rank beside it. Margin of safety uses the Graham/Buffett values that suit this industry. Left out: companies whose P/E below 4 suggests one-off gains or pre-demerger figures. ${rows.length} companies. Built ${ago(m.built_at)}. Not investment advice.</p>`
+      <p class="tiny">Each measure is ranked within this sector (cheaper valuation ratios and higher returns and yields rank better); the ranks are added and the lowest total comes first. Justified P/B = (ROE − 5%) ÷ (12.5% − 5%). Cycle-average EV/EBITDA = today's EV ÷ average operating profit of the years available. Magic Formula combined rank: Greenblatt's method within this sector (rank on return on capital + rank on earnings yield, lowest sum = 1), with the all-market rank beside it. Margin of safety uses the Graham/Buffett values that suit this industry. Left out: companies whose P/E below 4 suggests one-off gains or pre-demerger figures. ${rows.length} companies. Built ${ago(m.built_at)}. Not investment advice.</p>`
       : `<p class="small">No valued companies in this sector yet (statements are still being collected).</p>`;
   };
   document.getElementById("sec-liq").addEventListener("change", draw);

@@ -43,6 +43,25 @@ LONG_RUN_GROWTH = 4.0   # % a year after year 10, below the bond rate
 MAX_GROWTH = 15.0       # Graham capped growth assumptions; so do we
 
 
+def _fix_price_checks(checks: list[dict], price, eps_n, bvps) -> list[dict]:
+    """Graham's P/E and P/B tests on today's per-share figures (statement EPS can be off after bonuses, splits, demergers)."""
+    out = []
+    for c in checks:
+        c = dict(c)
+        if c.get("name") == "Moderate P/E" and price and eps_n:
+            pe3 = round(price / eps_n, 1) if eps_n > 0 else None
+            c.update(status="pass" if pe3 and pe3 <= 15 else "fail",
+                     value=f"P/E {pe3} on normal (3-yr average) EPS ₹{eps_n}" if pe3 else "Average earnings are negative")
+        if c.get("name") == "Moderate price to book" and price and bvps and eps_n:
+            pb = round(price / bvps, 2)
+            pe = round(price / eps_n, 1) if eps_n > 0 else None
+            ok = pb <= 1.5 or (pe is not None and pe * pb <= 22.5)
+            c.update(status="pass" if ok else "fail",
+                     value=f"P/B {pb}, P/E {pe}, product {round(pe * pb, 1) if pe else '—'}" if pe else f"P/B {pb}; earnings negative")
+        out.append(c)
+    return out
+
+
 def _avg(xs):
     xs = [x for x in xs if x is not None]
     return sum(xs) / len(xs) if xs else None
@@ -103,7 +122,7 @@ def value(ys: list[dict], price: float | None, bond_yield: float | None, financi
         "number": round(gn, 2) if gn else None,
         "formula": round(gf, 2) if gf else None,
         "how": f"Graham number √(22.5 × EPS {eps_n} × book value {bvps}); Graham formula EPS {eps_n} × (8.5 + 2 × {g:.1f}) × 4.4 ÷ {Y:.2f}.",
-        "checks": graham_checks or [],
+        "checks": _fix_price_checks(graham_checks or [], price, eps_n, bvps),
     }
 
     # --- Buffett

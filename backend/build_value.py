@@ -21,6 +21,104 @@ from backend.build_cards import bucket  # noqa: E402
 
 FIN = {"banks", "nbfc", "insurance"}
 
+# Valuation and quality ratios, computed for every company. hi = higher is better.
+METRICS = {
+    "pe": {"label": "P/E", "hi": False, "fmt": "x"},
+    "pe_norm": {"label": "P/E on 3-yr average earnings", "hi": False, "fmt": "x"},
+    "peg": {"label": "PEG (P/E ÷ profit growth)", "hi": False, "fmt": "x"},
+    "pb": {"label": "P/B", "hi": False, "fmt": "x"},
+    "pb_vs_roe": {"label": "P/B ÷ justified P/B (from ROE)", "hi": False, "fmt": "x"},
+    "ev_ebitda": {"label": "EV/EBITDA", "hi": False, "fmt": "x"},
+    "ev_ebitda_mid": {"label": "EV/EBITDA on cycle-average profit", "hi": False, "fmt": "x"},
+    "ps": {"label": "Price/sales", "hi": False, "fmt": "x"},
+    "p_cfo": {"label": "Price ÷ operating cash flow", "hi": False, "fmt": "x"},
+    "fcf_yield": {"label": "Free-cash-flow yield", "hi": True, "fmt": "%"},
+    "dcf_upside": {"label": "DCF (Buffett) upside", "hi": True, "fmt": "%"},
+    "roe": {"label": "Return on equity", "hi": True, "fmt": "%"},
+    "roa": {"label": "Return on assets", "hi": True, "fmt": "%"},
+    "roc": {"label": "Return on capital", "hi": True, "fmt": "%"},
+    "ey": {"label": "Earnings yield (Greenblatt)", "hi": True, "fmt": "%"},
+}
+
+# The ratios that fit each sector, with why, and the ones that mislead there.
+FIT = {
+    "banks": (["pb_vs_roe", "pb", "roe", "roa", "pe"], "Lenders: book value is the asset base, so P/B judged against return on equity is the core measure (a bank earning more on its book deserves a higher P/B); ROA shows asset quality and leverage; P/E is a cross-check.",
+              ["EV/EBITDA and cash-flow DCF: deposits are a bank's raw material, not debt", "Price/sales: interest income is not comparable to sales"]),
+    "nbfc": (["pb_vs_roe", "pb", "roe", "roa", "pe"], "Lenders: P/B against return on equity, plus ROA and P/E.",
+             ["EV/EBITDA and cash-flow DCF: borrowing is the business itself"]),
+    "insurance": (["pb", "roe", "pe_norm"], "Insurers: book value and return on equity (embedded value is not in the data feed); P/E on average earnings as a cross-check.",
+                  ["P/E on one year: new policies depress early profit", "EV/EBITDA: policyholder money is not debt"]),
+    "it": (["pe", "peg", "fcf_yield", "dcf_upside", "roc"], "Asset-light, cash-rich: earnings and cash flow drive value, so P/E with growth (PEG), free-cash-flow yield and a DCF; return on capital shows quality.",
+           ["P/B: the assets are people and client relationships, not on the balance sheet"]),
+    "fmcg": (["dcf_upside", "peg", "fcf_yield", "pe", "roc"], "Brand businesses with steady, predictable cash flow: a DCF of owner earnings is the main measure (Buffett), with PEG and free-cash-flow yield; P/E alone always looks high for these.",
+             ["P/B: brand value is not on the balance sheet"]),
+    "pharma": (["pe", "peg", "ev_ebitda", "roc"], "Product- and approval-driven: P/E against growth, EV/EBITDA to compare companies with different debt, and return on capital.",
+               ["P/B: research and approvals are not on the balance sheet"]),
+    "consumer_durables": (["pe", "peg", "roc", "fcf_yield"], "Brand-led growers: P/E with growth, return on capital and cash conversion.",
+                          ["P/B: brands matter more than assets"]),
+    "capital_goods": (["pe", "peg", "p_cfo", "roc"], "Order-book driven and working-capital heavy: P/E with growth, and price ÷ operating cash flow to catch profit tied up in receivables; return on capital.",
+                      ["P/B: value lies in engineering skill and the order book"]),
+    "metals": (["ev_ebitda_mid", "pb", "pe_norm"], "Asset-heavy, deep cyclical: EV/EBITDA on cycle-average profit and P/B (what the plants are worth), with P/E on average earnings; never current P/E.",
+               ["P/E on current earnings: lowest at the peak (Lynch)", "DCF on recent growth: extrapolates a boom or a slump"]),
+    "cement": (["ev_ebitda_mid", "pb", "pe_norm"], "Asset-heavy and cyclical: EV/EBITDA on cycle-average profit, P/B as the nearest measure of replacement cost (capacity is not in the data feed), and P/E on average earnings.",
+               ["P/E on current earnings: fuel costs and prices swing profit"]),
+    "oil_gas": (["ev_ebitda_mid", "pb", "fcf_yield"], "Commodity-driven and asset-heavy: EV/EBITDA on cycle-average profit, P/B, and free-cash-flow yield.",
+                ["P/E on one year: crude and refining margins swing profit"]),
+    "chemicals": (["ev_ebitda_mid", "peg", "roc"], "Commodity makers are cyclical (cycle-average EV/EBITDA), specialty makers grow (PEG); return on capital separates the two.",
+                  ["Valuing a commodity maker like a specialty one"]),
+    "textiles": (["pb", "pe_norm", "ev_ebitda_mid"], "Cyclical, asset-heavy, raw-material driven: P/B, P/E on average earnings, cycle-average EV/EBITDA.",
+                 ["P/E on one year: cotton prices and export orders swing margins"]),
+    "auto": (["pe_norm", "ev_ebitda_mid", "roc"], "Cyclical demand: P/E on average earnings and cycle-average EV/EBITDA, with return on capital.",
+             ["P/E on peak earnings (Lynch)"]),
+    "power": (["pb_vs_roe", "roe", "ev_ebitda"], "Regulated returns on book value: P/B against return on equity, ROE, and EV/EBITDA for the debt-heavy asset base.",
+              ["PEG: growth comes from adding capacity, not margins"]),
+    "realty": (["pb", "pe_norm", "p_cfo"], "Asset-based: P/B (land and projects; NAV is not in the data feed), P/E on average earnings, and price ÷ operating cash flow because reported profit is booked only on handover.",
+               ["P/E on one year: profit is lumpy"]),
+    "gold": (["pe", "peg", "p_cfo", "roc"], "Branded jewellers are inventory-heavy growers: P/E with growth, price ÷ operating cash flow (inventory eats cash), return on capital.",
+             ["P/B: brand and stores drive value"]),
+    "capital_markets": (["pe_norm", "roe", "fcf_yield"], "Fee businesses on little capital whose earnings rise and fall with markets: P/E on average earnings, ROE, free-cash-flow yield.",
+                        ["P/B: these businesses need almost no capital"]),
+    "general": (["pe", "ev_ebitda", "fcf_yield", "roc"], "Mixed businesses: P/E, EV/EBITDA to compare different debt levels, free-cash-flow yield and return on capital.", []),
+}
+
+
+def metrics(ys: list[dict], fin: dict, kr: dict, price: float | None, v: dict) -> dict:
+    """Every ratio in METRICS for one company (None where it cannot be computed)."""
+    r = lambda x, n=2: None if x is None else round(x, n)  # noqa: E731
+    y = ys[0]
+    pe = (kr.get("PE") or kr.get("P/E") or {}).get("company")
+    pb = (kr.get("P/B") or {}).get("company")
+    eve = (kr.get("EV/EBITDA") or {}).get("company")
+    inp = v.get("inputs", {})
+    eps_n = inp.get("normal EPS ₹ (3-yr average profit)")
+    bvps = inp.get("book value per share ₹ (price ÷ P/B)")
+    shares = (y["equity"] / bvps) if y.get("equity") and bvps else y.get("shares_cr")
+    mcap = price * shares if price and shares else None
+    g = inp.get(f"profit growth a year ({len(ys) - 1} yrs)")
+    roe = y.get("roe_pct")
+    cfo = [x["cfo"] for x in ys[:3] if x.get("cfo") is not None]
+    fcf = [x["cfo"] + x["cfi"] for x in ys[:4] if x.get("cfo") is not None and x.get("cfi") is not None]
+    ops = [p["operating_profit"] for p in fin.get("periods", []) if p.get("operating_profit") is not None]
+    ke, gl = 12.5, 5.0
+    jpb = (roe - gl) / (ke - gl) if roe and roe > gl else None
+    m = {
+        "pe": r(pe, 1) if pe and pe > 0 else None,
+        "pe_norm": r(price / eps_n, 1) if price and eps_n and eps_n > 0 else None,
+        "peg": r(pe / g, 2) if pe and pe > 0 and g and g > 0 else None,
+        "pb": r(pb), "pb_vs_roe": r(pb / jpb) if pb and jpb else None,
+        "ev_ebitda": r(eve, 1) if eve and eve > 0 else None,
+        "ev_ebitda_mid": r(eve * ops[0] / (sum(ops) / len(ops)), 1) if eve and eve > 0 and ops and ops[0] and ops[0] > 0 and sum(ops) > 0 else None,
+        "ps": r(mcap / y["revenue"]) if mcap and y.get("revenue") else None,
+        "p_cfo": r(mcap / (sum(cfo) / len(cfo)), 1) if mcap and cfo and sum(cfo) > 0 else None,
+        "fcf_yield": r(sum(fcf) / len(fcf) / mcap * 100, 1) if mcap and fcf else None,
+        "dcf_upside": r((v["buffett"]["value"] / price - 1) * 100, 1) if v.get("buffett", {}).get("value") and price else None,
+        "roe": r(roe, 1), "roa": r(y.get("roa_pct"), 1),
+        "roc": (v.get("magic") or {}).get("roc_pct"),
+        "ey": (v.get("magic") or {}).get("earnings_yield_pct"),
+    }
+    return m
+
+
 # How each sector's companies are ranked: the measures that fit the industry (each ranked within the sector,
 # ranks added, lowest total first). mos = margin of safety on the Graham/Buffett values that suit the industry;
 # roc / ey = Greenblatt's return on capital and earnings yield; roe = return on equity; cycle = earlier in the
@@ -88,6 +186,7 @@ def main() -> None:
         if v.get("available"):
             eve = (kr.get("EV/EBITDA") or {}).get("company")
             v["magic"]["earnings_yield_pct"] = round(100 / eve, 1) if eve and eve > 0 else None
+            v["ratios"] = metrics(ys, fin, kr, price, v)
         if not v.get("available"):
             continue
         c = {"isin": isin, "symbol": r["symbol"], "name": r["name"], "industry": labels.get(ind, ind), "industry_id": ind, "sector": prof.get("sector"),
@@ -107,7 +206,7 @@ def main() -> None:
         cards[i]["v"]["magic"].update(rank=pos, of=len(elig), roc_rank=r1[i], ey_rank=r2[i])
     mf = {i: cards[i]["v"]["magic"] for i in cards}
     index = [row + [mf[row[0]].get("roc_pct"), mf[row[0]].get("earnings_yield_pct"),
-                    (cards[row[0]]["v"].get("cycle") or {}).get("stage"), mf[row[0]].get("rank")] for row in index]
+                    (cards[row[0]]["v"].get("cycle") or {}).get("stage"), mf[row[0]].get("rank"), cards[row[0]]["v"].get("ratios")] for row in index]
     out.mkdir(parents=True, exist_ok=True)
     for old in out.glob("*.json"):
         old.unlink()
@@ -117,14 +216,15 @@ def main() -> None:
         groups[bucket(i, n)][i] = c
     for k in range(n):
         (out / f"c{k:03d}.json").write_text(json.dumps({"z": z(groups.get(k, {}))}))
-    parts = [index[i:i + 2500] for i in range(0, len(index), 2500)] or [[]]
+    parts = [index[i:i + 900] for i in range(0, len(index), 900)] or [[]]
     for k, p in enumerate(parts):
         (out / f"i{k}.json").write_text(json.dumps({"z": z(p)}))
     meta = {"chunks": n, "index_parts": len(parts), "companies": len(cards), "bond_yield": bond, "bond_yield_date": pts[-1][0] if pts else None,
             "prices_as_of": as_of, "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "columns": ["isin", "symbol", "name", "industry", "price", "graham_number", "graham_formula", "buffett_value", "value_mid",
                         "margin_of_safety_pct", "graham_passed", "graham_of", "buffett_passed", "buffett_of", "turnover_cr", "flagged", "industry_id", "roe_pct",
-                        "roc_pct", "earnings_yield_pct", "cycle", "mf_rank"],
+                        "roc_pct", "earnings_yield_pct", "cycle", "mf_rank", "ratios"],
+            "metrics": METRICS, "fit": {k: {"metrics": a, "why": b, "avoid": c} for k, (a, b, c) in FIT.items()},
             "sectors": SECTORS, "labels": labels,
             "magic_formula_universe": len(elig)}
     (out / "meta.json").write_text(json.dumps(meta, default=str))
