@@ -14,7 +14,7 @@ from pathlib import Path
 
 os.environ.setdefault("RUN_JOBS", "false")
 
-from backend.app import analysis, macro, statements, value_models  # noqa: E402
+from backend.app import analysis, macro, statements, valuation_methods, value_models  # noqa: E402
 from backend.app.db import SessionLocal, init_db  # noqa: E402
 from backend.app.market_data import build_rows  # noqa: E402
 from backend.build_cards import bucket  # noqa: E402
@@ -53,6 +53,11 @@ def main() -> None:
         kr = analysis.key_ratios(f)
         v = value_models.value(ys, price, bond, ind in FIN, analysis.graham(ind, fin, f, price) if fin["periods"] else [],
                                pe=(kr.get("P/E") or {}).get("company"), pb=(kr.get("P/B") or {}).get("company"), industry=ind)
+        if v.get("available") and valuation_methods.guide(ind)["cyclical"]:
+            q_rows = analysis._table(((f.get("income_q") or {}).get("data") or {}).get("income_statement"), "category")
+            quarterly = {k: [{"period": p, "value": x} for p, x in sorted(vv.items(), key=lambda kv: analysis.period_end(kv[0]) or 0, reverse=True)][:4] for k, vv in q_rows.items()}
+            cyc = valuation_methods.cycle_position(ind, fin, quarterly, valuation_methods._basics(fin, kr, price))
+            v["cycle"] = {k: cyc.get(k) for k in ("stage", "evidence", "lynch", "note", "how")}
         if v.get("available"):
             eve = (kr.get("EV/EBITDA") or {}).get("company")
             v["magic"]["earnings_yield_pct"] = round(100 / eve, 1) if eve and eve > 0 else None
@@ -73,7 +78,8 @@ def main() -> None:
     for pos, i in enumerate(sorted(elig, key=lambda i: (r1[i] + r2[i], r1[i])), 1):
         cards[i]["v"]["magic"].update(rank=pos, of=len(elig), roc_rank=r1[i], ey_rank=r2[i])
     mf = {i: cards[i]["v"]["magic"] for i in cards}
-    index = [row + [mf[row[0]].get("rank"), mf[row[0]].get("roc_pct"), mf[row[0]].get("earnings_yield_pct")] for row in index]
+    index = [row + [mf[row[0]].get("rank"), mf[row[0]].get("roc_pct"), mf[row[0]].get("earnings_yield_pct"),
+                    (cards[row[0]]["v"].get("cycle") or {}).get("stage")] for row in index]
     out.mkdir(parents=True, exist_ok=True)
     for old in out.glob("*.json"):
         old.unlink()
@@ -89,7 +95,7 @@ def main() -> None:
     meta = {"chunks": n, "index_parts": len(parts), "companies": len(cards), "bond_yield": bond, "bond_yield_date": pts[-1][0] if pts else None,
             "prices_as_of": as_of, "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "columns": ["isin", "symbol", "name", "industry", "price", "graham_number", "graham_formula", "buffett_value", "value_mid",
-                        "margin_of_safety_pct", "graham_passed", "graham_of", "buffett_passed", "buffett_of", "turnover_cr", "flagged", "mf_rank", "roc_pct", "earnings_yield_pct"],
+                        "margin_of_safety_pct", "graham_passed", "graham_of", "buffett_passed", "buffett_of", "turnover_cr", "flagged", "mf_rank", "roc_pct", "earnings_yield_pct", "cycle"],
             "magic_formula_universe": len(elig)}
     (out / "meta.json").write_text(json.dumps(meta, default=str))
     sizes = [os.path.getsize(p) for p in out.glob("*.json")]

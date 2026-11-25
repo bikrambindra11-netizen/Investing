@@ -399,8 +399,8 @@ def graham(industry: str, fin: dict, f: dict, price: float | None) -> list[dict]
     if price is None or not latest:
         add("Moderate price to book", "not_available", None, "P/B ≤ 1.5, or P/E × P/B ≤ 22.5")
     else:
-        shares_cr = latest["net_profit"] / latest["eps"]
-        if latest["eps"] <= 0 or shares_cr <= 0:
+        shares_cr = latest["net_profit"] / latest["eps"] if latest["eps"] else 0
+        if latest["eps"] <= 0 or shares_cr <= 0 or not latest["equity"]:
             add("Moderate price to book", "fail", "Negative earnings", "P/B ≤ 1.5, or P/E × P/B ≤ 22.5")
         else:
             pb = round(price / (latest["equity"] / shares_cr), 2)
