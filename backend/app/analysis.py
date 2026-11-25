@@ -519,3 +519,65 @@ def summary(name: str, macro: dict, qual: dict | None, graham_checks: list[dict]
             "scores": {"macro_share_tailwinds": macro_share, "micro": round(micro, 2) if micro is not None else None,
                        "valuation": vlabel},
             "label": "Screening output only. Not investment advice."}
+
+
+# ------------------------------------------------------------------ DCF and justified P/B
+
+COST_OF_EQUITY = 12.5  # % a year: Indian risk-free ~7% plus an equity risk premium
+TERMINAL_GROWTH = 5.0  # % a year after the forecast period (roughly long-run nominal GDP growth, conservatively)
+
+
+def dcf(industry: str, fin: dict, kr: dict, price: float | None) -> dict:
+    """Intrinsic value per share.
+
+    Non-financial companies: earnings-based DCF. Profit grows at the recent rate (capped at 20% and at
+    80% of ROE), fading to 5% over 10 years; the cash shareholders can take out each year is profit x
+    (1 - growth / ROE), the part not needed to fund that growth; discounted at 12.5%. Lenders:
+    justified P/B = (ROE - g) / (cost of equity - g) x book value per share."""
+    rows = fin.get("periods") or []
+    latest = latest_with(rows, "eps", "net_profit", "equity")
+    if not latest or not latest.get("eps") or latest["eps"] <= 0:
+        return {"available": False, "reason": "Needs positive earnings per share."}
+    shares_cr = latest["net_profit"] / latest["eps"]
+    g_hist = (fin.get("growth") or {}).get("net_profit_cagr_pct")
+    g = max(0.0, min(20.0, g_hist if g_hist is not None else 8.0))
+    ke, gt = COST_OF_EQUITY / 100, TERMINAL_GROWTH / 100
+    if industry in FINANCIAL_INDUSTRIES:
+        roe = (kr.get("ROE") or {}).get("company") or latest.get("roe_pct")
+        if not roe:
+            return {"available": False, "reason": "ROE not available."}
+        bvps = latest["equity"] / shares_cr
+        jpb = max(0.0, (roe / 100 - gt) / (ke - gt))
+        value = bvps * jpb
+        out = {"available": True, "method": "justified P/B", "value": round(value, 2),
+               "assumptions": f"Book value ₹{bvps:,.2f}/share, ROE {roe:.1f}%, cost of equity {COST_OF_EQUITY}%, long-run growth {TERMINAL_GROWTH}% → justified P/B {jpb:.2f}."}
+    else:
+        roe = (kr.get("ROE") or {}).get("company") or latest.get("roe_pct")
+        if not roe or roe <= 0:
+            return {"available": False, "reason": "Needs a positive return on equity."}
+        # Growth cannot exceed what the company's ROE can fund for long: cap it at 80% of ROE.
+        g = max(0.0, min(g, 0.8 * roe))
+        pat = latest["net_profit"]
+        pv, earn = 0.0, pat
+        steps = [g + (TERMINAL_GROWTH - g) * i / 9 for i in range(10)]  # 10 years, fading from g to the long-run rate
+        for yr, gi in enumerate(steps, 1):
+            earn *= 1 + gi / 100
+            payout = max(0.0, 1 - gi / roe)  # what is left after reinvesting enough to grow at gi
+            pv += earn * payout / (1 + ke) ** yr
+        tv_payout = max(0.0, 1 - TERMINAL_GROWTH / roe)
+        tv = earn * (1 + gt) * tv_payout / (ke - gt) / (1 + ke) ** 10
+        value = (pv + tv) / shares_cr
+        out = {"available": True, "method": "DCF (earnings)", "value": round(value, 2),
+               "assumptions": f"Profit ₹{pat:,.0f} Cr ({latest['period']}), ROE {roe:.1f}%, growth {g:.1f}% a year fading to {TERMINAL_GROWTH}% over 10 years; "
+                              f"each year's cash to shareholders = profit × (1 − growth ÷ ROE); discount rate {COST_OF_EQUITY}%; {shares_cr:,.1f} Cr shares."}
+        fcfs = [(r["cash_from_operations"] or 0) + (r["investing_cash_flow"] or 0) for r in rows[:3]
+                if r.get("cash_from_operations") is not None and r.get("investing_cash_flow") is not None]
+        if fcfs:
+            base = sum(fcfs) / len(fcfs)
+            out["cash_flow_check"] = (f"Recent free cash flow (operating + investing, 3-yr avg) is ₹{base:,.0f} Cr a year"
+                                      + (", well below profit: the company is investing heavily, so a DCF on today's cash flow would understate its value." if base < 0.5 * pat
+                                         else ", in line with profit." if base < 1.3 * pat else ", above profit."))
+    if price:
+        out["upside_pct"] = round((out["value"] / price - 1) * 100, 1)
+        out["margin_of_safety"] = "yes" if out["value"] >= price * 1.3 else "no"
+    return out

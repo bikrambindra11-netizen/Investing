@@ -203,8 +203,17 @@ def main() -> None:
                                  "ce_iv": r["ce_g"].get("iv"), "pe_ltp": r["pe"].get("ltp"), "pe_oi": r["pe"].get("oi"),
                                  "pe_iv": r["pe_g"].get("iv")} for r in sorted(near, key=lambda r: r["strike"])]
 
+    from backend.sources import nse_delivery, nse_sectors
+    prom = next((x for x in (page["shareholding"] or {}).get("rows", []) if x["key"] == "promoters"), None)
+    prom_pct = prom["values"][0]["pct"] if prom and prom["values"] else None
+    extras = {"dcf": analysis.dcf(industry, fin, kr, price) if fin else {"available": False, "reason": "No financials."},
+              "delivery": nse_delivery.summary(primary.symbol, nse_delivery.recent(jobs.today_ist(), 5)),
+              "indices": nse_sectors.index_membership().get(isin, []),
+              "free_float_pct": round(100 - prom_pct, 2) if prom_pct is not None else None}
+
     page.pop("candles", None)
     result = {
+        **extras,
         "technicals": tech,
         "structure": struct,
         "chart_image": png,

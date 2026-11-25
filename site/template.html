@@ -386,7 +386,7 @@ function renderIndustry(id) {
   if (!m) { app().innerHTML = `<section class="panel">Industry not found. <a href="#industries">All industries</a>.</section>`; return; }
   const members = S.stocks.filter((s) => s.ind === id);
   app().innerHTML = `<div><h1>${esc(m.label)}</h1><p class="sub">${int.format(members.length)} listed companies</p></div>
-    <section class="live-box"><div class="live-head"><div><h2>Industry analysis (your framework)</h2><p class="sub">Claude researches this industry from primary sources and answers the framework: value chain, size and structure, imports and players, capacity utilisation, segments, government policy, nature and drivers, and the cycle. It then compares the listed companies on fundamentals. About 5–10 minutes.</p></div>
+    <section class="live-box"><div class="live-head"><div><h2>Industry analysis (your framework)</h2><p class="sub">Claude pulls live numbers for every listed company in the industry (5-year margins, growth, returns, leverage, projections, P/E, P/B, EV/EBITDA, DCF value, Graham, Magic Formula, shareholding, free float, indices, delivery, latest news), then researches the industry from primary sources and answers your framework. About 15–20 minutes.</p></div>
       <button class="btn primary" id="ind-analyse">Analyse industry</button></div><div id="ind-body"></div></section>
     <section class="panel"><h2>Best on fundamentals in this industry</h2><p class="sub">From the fundamental scorecards (quality, value, growth, ownership, economy). Screening output, not advice.</p><div id="ind-top"><p class="tiny">Loading scorecards…</p></div></section>
     ${macroPanel(m, "Economy check")}
@@ -401,6 +401,7 @@ function renderIndustry(id) {
     const busy = d.status === "queued" || d.status === "working"; btn.disabled = busy; btn.textContent = busy ? "Analysing…" : "Analyse again";
     let h = busy ? `<p class="steps"><span class="spinner"></span>${esc(d.step || "Working…")}</p>` : "";
     if (d.status === "failed") h += `<p class="notice">It stopped: ${esc(d.error || "unknown error")}</p>`;
+    if (d.report) h += industryReport(d.report);
     if (d.framework) {
       const fw = d.framework;
       if (fw.summary) h += `<p>${esc(fw.summary)}</p>`;
@@ -434,6 +435,19 @@ function rsiArr(v, n = 14) { const o = new Array(v.length).fill(null); if (v.len
 function readDrawings(key) { try { return JSON.parse(localStorage.getItem("draw:" + key) || "[]"); } catch (e) { return []; } }
 function saveDrawings(key, d) { try { localStorage.setItem("draw:" + key, JSON.stringify(d)); } catch (e) { /* drawings stay for this visit */ } }
 
+function keyLevelOf(p, q) {
+  const st = q.structure || {}, t = q.technicals || {};
+  const lv = [...(t.supports || []).map((l) => [l.level, "support"]), ...(t.resistances || []).map((l) => [l.level, "resistance"]),
+    ...((st.fibonacci && st.fibonacci.levels) || []).map((l) => [l.price, `Fib ${l.ratio}`]), ...(st.chart_patterns || []).map((c) => [c.neckline, "neckline"])];
+  const hit = lv.find(([v]) => Math.abs(p.price / v - 1) <= 0.015);
+  if (hit) return `${hit[1]} ₹${price(hit[0])}`;
+  const rows = q.chart, n = rows.length, i = rows.findIndex((r) => r[0] === p.date);
+  for (const tl of st.trend_lines || []) {
+    const i1 = n - 1 - tl.from.bars_ago, v = tl.from.price + tl.slope_per_day * (i - i1);
+    if (i >= 0 && Math.abs(p.price / v - 1) <= 0.015) return `trend line ₹${price(v)}`;
+  }
+  return null;
+}
 function interactiveChart(elId, q, storeKey) {
   const el = document.getElementById(elId); if (!el) return;
   if (ICH[elId]) { ICH[elId].destroy(); delete ICH[elId]; }
@@ -444,9 +458,9 @@ function interactiveChart(elId, q, storeKey) {
   const rows = q.chart.map((r) => ({ time: r[0], open: r[1], high: r[2], low: r[3], close: r[4], volume: r[5] }));
   const st = q.structure || {}, t = q.technicals || {};
   const patByDate = {}; (st.candles || []).forEach((p) => (patByDate[p.date] = (patByDate[p.date] ? patByDate[p.date] + ", " : "") + p.pattern));
-  const on = Object.assign({ levels: true, fib: true, trend: true, patterns: true, ma: true, volume: true, rsi: true }, (ICH._prefs || {}));
+  const on = Object.assign({ levels: true, fib: true, trend: true, patterns: true, allpat: false, ma: true, volume: true, rsi: true }, (ICH._prefs || {}));
   el.innerHTML = `<div class="toolbar">
-      ${[["levels", "Support/resistance"], ["fib", "Fibonacci"], ["trend", "Trend lines"], ["patterns", "Patterns"], ["ma", "Averages"], ["volume", "Volume"], ["rsi", "RSI"]].map(([k, l]) => `<label><input type="checkbox" data-o="${k}" ${on[k] ? "checked" : ""}> ${l}</label>`).join("")}
+      ${[["levels", "Support/resistance"], ["fib", "Fibonacci"], ["trend", "Trend lines"], ["patterns", "Patterns at key levels"], ["allpat", "Show all patterns"], ["ma", "Averages"], ["volume", "Volume"], ["rsi", "RSI"]].map(([k, l]) => `<label><input type="checkbox" data-o="${k}" ${on[k] ? "checked" : ""}> ${l}</label>`).join("")}
     </div><div class="toolbar">
       <button class="btn sm" data-a="hline">+ Horizontal line</button><button class="btn sm" data-a="tline">+ Trend line</button>
       <button class="btn sm" data-a="undo">Undo drawing</button><button class="btn sm" data-a="clear">Clear my drawings</button>
@@ -488,9 +502,9 @@ function interactiveChart(elId, q, storeKey) {
       .setData([{ time: rows[x0].time, value: at(x0) }, { time: rows[n - 1].time, value: at(n - 1) }]);
   });
   const BEAR = ["Bearish engulfing", "Shooting star", "Evening star", "Three black crows", "Bearish marubozu", "Bearish harami", "Gap down"];
-  if (on.patterns) {
+  if (on.patterns || on.allpat) {
     const dates = new Set(rows.map((r) => r.time));
-    candle.setMarkers((st.candles || []).filter((p) => dates.has(p.date)).map((p) => { const b = BEAR.includes(p.pattern);
+    candle.setMarkers((st.candles || []).filter((p) => dates.has(p.date) && (on.allpat || keyLevelOf(p, q))).map((p) => { const b = BEAR.includes(p.pattern);
       return { time: p.date, position: b ? "aboveBar" : "belowBar", color: b ? DN : UP, shape: b ? "arrowDown" : "arrowUp", text: p.pattern }; })
       .sort((a, b) => (a.time < b.time ? -1 : 1)));
   }
@@ -579,7 +593,9 @@ function candleSection(isin) {
 function candleInfo(isin) {
   const t = techStock(isin), wk = candleView === "weekly", v = wk ? t.w : t, el = document.getElementById("candleinfo"); if (!el) return;
   const lv = (a) => (a.length ? a.map((l) => `₹${price(l.level)} <span class="tiny">(${l.touches}×, ${pct(l.distance_pct)})</span>`).join("<br>") : NA);
-  const pats = v.patterns.slice().reverse();
+  const q_ = techQ(isin, candleView);
+  const all = v.patterns.slice().reverse().map((p) => ({ ...p, at: keyLevelOf(p, q_) }));
+  const pats = all.filter((p) => p.at), others = all.filter((p) => !p.at);
   el.innerHTML = `<p class="sub">${wk ? "104 weekly candles (2 years): the bigger trend and the major levels." : "250 daily sessions (1 year): levels, trend lines and Fibonacci are measured over the year; patterns over the last 30 sessions."} Weekly trend: ${esc(t.weekly)}. Updated ${when(S.meta.generated_at)}.</p>
     <div class="grid kv" style="margin-top:8px">${kv("Support", lv(v.supports))}${kv("Resistance", lv(v.resistances))}
       ${v.fib ? kv("Fibonacci", `${v.fib.levels.map((l) => `${l.ratio}: ₹${price(l.price)}`).join("<br>")}`) : ""}
@@ -589,8 +605,9 @@ function candleInfo(isin) {
     ${v.fib ? `<p class="small">${esc(v.fib.reading)}</p>` : ""}
     ${v.trend_lines.length ? `<ul class="small">${v.trend_lines.map((tl) => `<li>Trend line: ${esc(tl.kind)} from ₹${price(tl.from.price)} (${esc(tl.from.date)}) through ₹${price(tl.to.price)} (${esc(tl.to.date)}), ${tl.touches} touches, now ₹${price(tl.value_now)}</li>`).join("")}</ul>` : ""}
     ${v.chart_patterns.length ? `<ul class="small">${v.chart_patterns.map((p) => `<li>${esc(p.pattern)} at ₹${price(p.level)}, neckline ₹${price(p.neckline)}: ${esc(p.meaning)}</li>`).join("")}</ul>` : ""}
-    <details class="sec" open><summary>Candlestick patterns in the last ${wk ? "12 weeks" : "30 sessions"} (${pats.length})</summary>
-      ${pats.length ? `<div class="scroll"><table><thead><tr><th>${wk ? "Week of" : "Date"}</th><th>Pattern</th><th>What it means</th><th class="num">At</th><th>Near a key level?</th></tr></thead><tbody>${pats.map((p) => { const near = [...v.supports, ...v.resistances].find((l) => Math.abs(p.price / l.level - 1) <= 0.015) || (v.fib && v.fib.levels.find((l) => Math.abs(p.price / l.price - 1) <= 0.015)); return `<tr><td class="tiny">${esc(p.date)}</td><td><b>${esc(p.pattern)}</b></td><td class="small">${esc(p.meaning)}</td><td class="num">₹${price(p.price)}</td><td class="small">${near ? `yes, ₹${price(near.level ?? near.price)}` : "—"}</td></tr>`; }).join("")}</tbody></table></div>` : `<p class="small">No classic candlestick patterns in this window.</p>`}
+    <details class="sec" open><summary>Candlestick patterns at key levels, last ${wk ? "12 weeks" : "30 sessions"} (${pats.length})</summary>
+      ${pats.length ? `<div class="scroll"><table><thead><tr><th>${wk ? "Week of" : "Date"}</th><th>Pattern</th><th>What it means</th><th class="num">At</th><th>Key level</th></tr></thead><tbody>${pats.map((p) => `<tr><td class="tiny">${esc(p.date)}</td><td><b>${esc(p.pattern)}</b></td><td class="small">${esc(p.meaning)}</td><td class="num">₹${price(p.price)}</td><td class="small">${esc(p.at)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="small">No candlestick pattern formed at a key level in this window.</p>`}
+      ${others.length ? `<details style="margin-top:6px"><summary class="small">${others.length} other pattern${others.length === 1 ? "" : "s"} away from key levels (less meaningful)</summary><ul class="small">${others.map((p) => `<li>${esc(p.date)}: ${esc(p.pattern)} at ₹${price(p.price)}</li>`).join("")}</ul></details>` : ""}
       <p class="tiny">A pattern carries more weight when it forms at a marked support/resistance, trend line or Fibonacci level, on higher volume, and in line with the weekly trend. Facts, not buy/sell signals.</p></details>
     ${wk ? "" : `<ul class="small">${t.observations.map((o) => `<li>${esc(o)}</li>`).join("")}</ul>`}`;
 }
@@ -726,7 +743,11 @@ function renderQuant(q, fw) {
       ${(v ? v.metrics : []).map((m) => kv(m.name, `${m.current ?? NA} <span class="tiny">sector ${m.sector ?? NA} · own avg ${m.own_avg ?? NA}</span>`)).join("")}
       ${kv("Valuation", esc(v ? v.label : NA))}
       ${kv("Estimated fair value", iv.available ? `₹${price(iv.value)} <span class="tiny">(₹${price(iv.low)}–${price(iv.high)}, ${pct(iv.upside_pct)} vs price)</span>` : esc(iv.reason || NA))}
-      ${kv("Magic Formula", mf.available ? `ROC ${mf.roc_pct}% · EY ${mf.earnings_yield_pct}%` : esc(mf.reason || NA))}</div>
+      ${kv("Magic Formula", mf.available ? `ROC ${mf.roc_pct}% · EY ${mf.earnings_yield_pct}%` : esc(mf.reason || NA))}
+      ${q.dcf ? kv(q.dcf.method || "DCF", q.dcf.available ? `₹${price(q.dcf.value)} <span class="tiny">(${pct(q.dcf.upside_pct)} vs price)</span>` : esc(q.dcf.reason || NA)) : ""}
+      ${q.free_float_pct != null ? kv("Free float", q.free_float_pct + "%") : ""}${q.indices ? kv("Indices", esc(q.indices.join(", ") || "none listed")) : ""}
+      ${q.delivery && q.delivery.available ? kv("Delivery %", `${q.delivery.latest.delivery_pct}% today · ${q.delivery.avg_delivery_pct}% 5-day avg`) : ""}</div>
+      ${q.dcf && q.dcf.assumptions ? `<p class="tiny">${esc(q.dcf.assumptions)}</p>` : ""}
       ${iv.available ? `<p class="tiny">${esc(iv.method)}</p>` : ""}${mf.available ? `<p class="small">${esc(mf.verdict)} (rank ${mf.peer_rank} of ${mf.peer_count} among competitors). <span class="tiny">${esc(mf.note)}</span></p>` : ""}</details>`;
   }
   if (q.graham) {
@@ -804,6 +825,54 @@ function drawTechChart(q, elId = "techchart") {
     <p class="tiny">Daily candles. Green/red dashed = support/resistance · dotted gold = Fibonacci · solid green = trend lines · blue dash-dot = pattern necklines · ▲▼ = recent candlestick patterns (hover for names; listed below) · blue line = 50-candle average, dotted grey = 20-candle average (days on the daily chart, weeks on the weekly).</p>`;
 }
 
+
+
+// ---------- industry report (every company, every ratio in the framework)
+function industryReport(r) {
+  const n = (v, suf = "") => (v == null ? "—" : `${typeof v === "number" ? v.toLocaleString("en-IN", { maximumFractionDigits: 2 }) : v}${suf}`);
+  const R = (x, k) => (x.ratios[k] || {}).company, RS = (x, k) => (x.ratios[k] || {}).sector;
+  const g = (x) => (x.graham || []).filter((c) => c.status === "pass").length + "/" + (x.graham || []).filter((c) => ["pass", "fail", "partial"].includes(c.status)).length;
+  const rows = r.companies.map((x) => { const f0 = x.financials[0] || {};
+    return `<tr><td><div class="name"><a href="#stock-${esc(x.isin)}">${esc(x.symbol)}</a></div><div class="co">${esc(x.basic_industry || x.name || "")}</div></td>
+      <td class="num">${n(x.revenue_share_pct, "%")}</td><td class="num">${price(x.price)}</td><td class="num">${n(x.market_cap_cr != null ? Math.round(x.market_cap_cr) : null)}</td>
+      <td class="num">${n(f0.revenue != null ? Math.round(f0.revenue) : null)}</td><td class="num">${n(x.growth.revenue_cagr_pct, "%")}</td><td class="num">${n(x.growth.net_profit_cagr_pct, "%")}</td>
+      <td class="num">${n(f0.operating_margin_pct, "%")}</td><td class="num">${n(f0.net_margin_pct, "%")}</td><td class="num">${n(R(x, "ROE"), "%")}</td><td class="num">${n(R(x, "ROCE"), "%")}</td>
+      <td class="num">${n(f0.liabilities_to_equity, "×")}</td><td class="num">${n(f0.cfo_to_profit, "×")}</td>
+      <td class="num">${n(R(x, "P/E"))} <span class="tiny">(${n(RS(x, "P/E"))})</span></td><td class="num">${n(R(x, "P/B"))}</td><td class="num">${n(R(x, "EV/EBITDA"))}</td>
+      <td class="num">${x.dcf.available ? `₹${price(x.dcf.value)} <span class="tiny ${cls(x.dcf.upside_pct)}">${pct(x.dcf.upside_pct)}</span>` : "—"}</td>
+      <td>${x.valuation ? `<span class="pill ${x.valuation.label === "cheap" ? "good" : x.valuation.label === "expensive" ? "bad" : "na"}">${esc(x.valuation.label)}</span>` : "—"}</td>
+      <td class="num">${g(x)}</td><td class="num">${x.magic_formula.industry_rank ? `${x.magic_formula.industry_rank}/${x.magic_formula.of}` : "—"}</td>
+      <td class="num">${n(x.free_float_pct, "%")}</td><td class="num">${x.delivery.available ? n(x.delivery.avg_delivery_pct, "%") : "—"}</td><td class="num ${cls(x.returns && x.returns.return_1y)}">${x.returns ? pct(x.returns.return_1y) : "—"}</td></tr>`; }).join("");
+  const M = r.medians;
+  const table = `<div class="scroll"><table style="min-width:1500px"><thead><tr><th>Company</th><th class="num">Share of listed revenue</th><th class="num">Price ₹</th><th class="num">Mkt cap ₹Cr</th><th class="num">Revenue ₹Cr</th><th class="num">Revenue growth/yr</th><th class="num">Profit growth/yr</th><th class="num">Op. margin</th><th class="num">Net margin</th><th class="num">ROE</th><th class="num">ROCE</th><th class="num">Liab ÷ equity</th><th class="num">Cash ÷ profit</th><th class="num">P/E (sector)</th><th class="num">P/B</th><th class="num">EV/EBITDA</th><th class="num">Intrinsic value (vs price)</th><th>Valuation</th><th class="num">Graham</th><th class="num">Magic F.</th><th class="num">Free float</th><th class="num">Delivery %</th><th class="num">1 year</th></tr></thead>
+    <tbody>${rows}<tr style="background:var(--soft)"><td><b>Industry median</b></td><td></td><td></td><td></td><td></td><td class="num">${n(M.revenue_cagr, "%")}</td><td class="num">${n(M.profit_cagr, "%")}</td><td></td><td class="num">${n(M.net_margin_pct, "%")}</td><td class="num">${n(M.roe, "%")}</td><td class="num">${n(M.roce, "%")}</td><td></td><td></td><td class="num">${n(M.pe)}</td><td class="num">${n(M.pb)}</td><td class="num">${n(M.ev_ebitda)}</td><td colspan="7"></td></tr></tbody></table></div>`;
+  const details = r.companies.map((x) => {
+    const yrs = x.financials, pj = (x.projection.years || []).slice(0, 3);
+    const line = (lab, fn, pf) => `<tr><td>${lab}</td>${yrs.map((y) => `<td class="num">${fn(y)}</td>`).join("")}${pj.map((p) => `<td class="num tiny">${pf ? pf(p) : ""}</td>`).join("")}</tr>`;
+    const sh = x.shareholding;
+    return `<details class="sec"><summary>${esc(x.symbol)} — ${esc(x.name || "")}</summary>
+      ${x.description ? `<p class="small">${esc(x.description)}</p>` : ""}
+      <div class="scroll"><table style="min-width:700px"><thead><tr><th></th>${yrs.map((y) => `<th class="num">${esc(y.period)}</th>`).join("")}${pj.map((p) => `<th class="num">${esc(p.period)}</th>`).join("")}</tr></thead><tbody>
+        ${line("Revenue ₹Cr", (y) => n(y.revenue != null ? Math.round(y.revenue) : null), (p) => n(p.revenue))}${line("Operating profit ₹Cr", (y) => n(y.operating_profit != null ? Math.round(y.operating_profit) : null))}
+        ${line("Net profit ₹Cr", (y) => n(y.net_profit != null ? Math.round(y.net_profit) : null), (p) => n(p.net_profit))}${line("EPS ₹", (y) => n(y.eps), (p) => n(p.eps))}
+        ${line("Operating margin", (y) => n(y.operating_margin_pct, "%"))}${line("Net margin", (y) => n(y.net_margin_pct, "%"))}${line("ROE", (y) => n(y.roe_pct, "%"))}
+        ${line("Cash from ops ÷ profit", (y) => n(y.cfo_to_profit, "×"))}${line("Current ratio", (y) => n(y.current_ratio))}${line("Liabilities ÷ equity", (y) => n(y.liabilities_to_equity, "×"))}${line("Investing cash flow ₹Cr", (y) => n(y.investing_cash_flow != null ? Math.round(y.investing_cash_flow) : null))}
+      </tbody></table></div>
+      ${x.projection.method ? `<p class="tiny">Projection: ${esc(x.projection.method)}</p>` : ""}
+      <div class="grid kv">${x.valuation ? x.valuation.metrics.map((m) => kv(`${m.name} (chosen)`, `${n(m.current)} <span class="tiny">sector ${n(m.sector)} · own avg ${n(m.own_avg)}</span>`)).join("") : ""}
+        ${kv(x.dcf.method || "Intrinsic value", x.dcf.available ? `₹${price(x.dcf.value)} <span class="tiny">${pct(x.dcf.upside_pct)} vs price</span>` : esc(x.dcf.reason || NA))}
+        ${kv("Indices", esc((x.indices || []).join(", ") || "none listed"))}${kv("Volume · delivery", x.delivery.available ? `${vol(x.delivery.latest.volume)} · ${n(x.delivery.latest.delivery_pct, "%")} (5-day avg ${n(x.delivery.avg_delivery_pct, "%")})` : NA)}</div>
+      ${x.dcf.assumptions ? `<p class="tiny">${esc(x.dcf.assumptions)}</p>` : ""}
+      ${x.valuation ? `<p class="tiny">${esc(x.valuation.why)}</p>` : ""}
+      ${sh ? `<div class="scroll"><table><thead><tr><th>Holder</th>${sh.periods.map((p) => `<th class="num">${esc(p)}</th>`).join("")}</tr></thead><tbody>${sh.rows.map((rr) => `<tr><td>${esc(rr.category)}</td>${rr.values.map((v) => `<td class="num">${n(v.pct, "%")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : ""}
+      ${(x.graham || []).length ? `<p class="small">Graham: ${x.graham.map((c) => `${c.status === "pass" ? "✓" : c.status === "fail" ? "✗" : "~"} ${esc(c.name)}`).join(" · ")}</p>` : ""}
+      ${(x.news || []).length ? `<ul class="small">${x.news.map((nn) => { const u = safeUrl(nn.link); return `<li><span class="pill ${esc(nn.sentiment)}">${esc(nn.sentiment)}</span> ${u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(nn.title)}</a>` : esc(nn.title)} <span class="tiny">${esc(nn.publisher || "")} · ${when(nn.published)}</span></li>`; }).join("")}</ul>` : ""}
+    </details>`; }).join("");
+  return `<details class="sec" open><summary>Every company, every ratio (${r.covered} of ${r.listed_companies} listed, most traded first)</summary>${table}
+    <p class="tiny">${esc(r.notes)} Intrinsic value: DCF of free cash flow for non-financial companies, justified P/B for lenders (assumptions under each company). Sources: ${esc(r.sources)} Data as of ${when(r.generated_at)}.</p></details>
+    <details class="sec"><summary>Company-by-company detail: 5-year history, projection, valuation, shareholding, news</summary>${details}</details>
+    ${(r.industry_news || []).length ? `<details class="sec"><summary>Latest industry news</summary><ul class="small">${r.industry_news.map((nn) => { const u = safeUrl(nn.link); return `<li><span class="pill ${esc(nn.sentiment)}">${esc(nn.sentiment)}</span> ${u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(nn.title)}</a>` : esc(nn.title)} <span class="tiny">${when(nn.published)}</span></li>`; }).join("")}</ul></details>` : ""}`;
+}
 
 // ---------- investing (fundamental scorecards from the page database)
 let SCORES = null;

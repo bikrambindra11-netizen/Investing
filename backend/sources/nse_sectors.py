@@ -63,3 +63,21 @@ def fetch() -> dict[str, str]:
     if not result:
         raise RuntimeError("no NSE index lists could be downloaded: " + "; ".join(errors))
     return result
+
+
+INDEX_LISTS = {"Nifty 50": "ind_nifty50list", "Nifty Next 50": "ind_niftynext50list", "Nifty Midcap 150": "ind_niftymidcap150list",
+               "Nifty Smallcap 250": "ind_niftysmallcap250list", "Nifty Microcap 250": "ind_niftymicrocap250_list",
+               "Nifty 500": "ind_nifty500list", "Nifty Total Market": "ind_niftytotalmarket_list"}
+
+
+def index_membership() -> dict[str, list[str]]:
+    """ISIN -> NSE indices the company belongs to."""
+    out: dict[str, list[str]] = {}
+    for idx, name in INDEX_LISTS.items():
+        try:
+            raw = cached_download(URL.format(name=name), f"{name}.csv", max_age_s=7 * 86400)
+        except (NotFound, RuntimeError):
+            continue
+        for isin in parse(raw.decode("utf-8", "replace")):
+            out.setdefault(isin, []).append(idx)
+    return out
