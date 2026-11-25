@@ -110,6 +110,7 @@ footer { font-size: 12px; color: var(--muted); padding-block: 0 30px }
   <a class="brand" href="#market">Stock Picker Portal</a>
   <nav class="tabs" aria-label="Sections">
     <a href="#market" data-tab="market">Market</a>
+    <a href="#investing" data-tab="investing">Investing</a>
     <a href="#industries" data-tab="industries">Industries</a>
     <a href="#economy" data-tab="economy">Economy</a>
     <a href="#trading" data-tab="trading">Market pulse</a>
@@ -159,7 +160,7 @@ function spark(points, w = 96, h = 26) {
 }
 
 // ---------- routing
-const routes = { market: renderMarket, industries: renderIndustries, economy: renderEconomy, trading: renderTrading };
+const routes = { market: renderMarket, investing: renderInvesting, industries: renderIndustries, economy: renderEconomy, trading: renderTrading };
 function route() {
   const h = location.hash.slice(1) || "market";
   document.querySelectorAll("nav.tabs a").forEach((a) => a.toggleAttribute("aria-current", false));
@@ -301,6 +302,7 @@ async function renderStock(isin) {
         <div class="num ${cls(c.ch)}">${pct(c.ch)}</div>
         <div class="tiny">${c.live ? '<span class="live-dot"></span>' : ""}${esc(c.src || NA)} · ${when(c.at)}</div></div>
     </div>
+    <section class="panel" id="scorecard"><p class="tiny">Loading fundamental scorecard…</p></section>
     <section class="live-box" id="live"><div class="live-head"><div><h2>Live analysis</h2><p class="sub">Claude collects fresh prices, financials, the option chain, news and economy data, reads the company's annual report, presentations and con calls, answers your full framework and weighs everything together. Takes about 5–10 minutes. Analysis only; you decide.</p></div>
       <button class="btn primary" id="analyse">Analyse now</button></div><div id="live-body"></div></section>
     <section class="verdict ${tone}"><div class="eyebrow">Quick view (from the last update)</div>
@@ -322,6 +324,11 @@ async function renderStock(isin) {
       <div class="notice">Financial statements, ratios (P/E, ROE, ROCE), shareholding, Graham's checks and valuation come from Upstox and need a personal Upstox login, which this hosted page cannot hold. They appear in the version of the portal you run on your own computer.</div></section>
     ${newsPanel((S.news || {})[isin], "News")}`;
   liveReport(isin, s);
+  loadScores().then((sc) => {
+    const el = document.getElementById("scorecard"); if (!el || !sc) return;
+    const c = sc.cards.find((x) => x.isin === isin);
+    el.innerHTML = c ? `<h2>Fundamental scorecard (investing)</h2>${scoreTable([c], true)}<p class="tiny">Graham: ${(c.graham || []).map((g) => `${g.pass ? "✓" : "✗"} ${esc(g.test)}`).join(" · ")}. Updated ${ago(c.generated_at)}.</p>` : `<p class="tiny">No fundamental scorecard for this company yet (scorecards cover the ~800 most traded companies).</p>`;
+  });
   if (series) {
     drawChart(series);
     document.querySelectorAll("#ranges .btn").forEach((b) => b.addEventListener("click", () => {
@@ -368,9 +375,35 @@ function renderIndustry(id) {
   if (!m) { app().innerHTML = `<section class="panel">Industry not found. <a href="#industries">All industries</a>.</section>`; return; }
   const members = S.stocks.filter((s) => s.ind === id);
   app().innerHTML = `<div><h1>${esc(m.label)}</h1><p class="sub">${int.format(members.length)} listed companies</p></div>
+    <section class="live-box"><div class="live-head"><div><h2>Industry analysis (your framework)</h2><p class="sub">Claude researches this industry from primary sources and answers the framework: value chain, size and structure, imports and players, capacity utilisation, segments, government policy, nature and drivers, and the cycle. It then compares the listed companies on fundamentals. About 5–10 minutes.</p></div>
+      <button class="btn primary" id="ind-analyse">Analyse industry</button></div><div id="ind-body"></div></section>
+    <section class="panel"><h2>Best on fundamentals in this industry</h2><p class="sub">From the fundamental scorecards (quality, value, growth, ownership, economy). Screening output, not advice.</p><div id="ind-top"><p class="tiny">Loading scorecards…</p></div></section>
     ${macroPanel(m, "Economy check")}
     <section class="panel"><h2>Companies in this industry</h2><p class="sub">Top 40 by value traded. Companies are placed using NSE sector lists and company names.</p>${peersTable(members.slice(0, 40))}</section>
     ${newsPanel(m.news, "Industry news")}`;
+  const btn = document.getElementById("ind-analyse"), body = document.getElementById("ind-body");
+  btn.addEventListener("click", () => startJob(`industries/${id}`, `INDUSTRY ${id}`, btn, body));
+  watchDoc(`industries/${id}`, (d, err) => {
+    if (location.hash.slice(10) !== id) return;
+    if (err === "nodb") { body.innerHTML = `<p class="tiny">Open this page on claude.ai (signed in) to run it.</p>`; return; }
+    if (!d) { body.innerHTML = `<p class="tiny">Not analysed yet. Press “Analyse industry”.</p>`; return; }
+    const busy = d.status === "queued" || d.status === "working"; btn.disabled = busy; btn.textContent = busy ? "Analysing…" : "Analyse again";
+    let h = busy ? `<p class="steps"><span class="spinner"></span>${esc(d.step || "Working…")}</p>` : "";
+    if (d.status === "failed") h += `<p class="notice">It stopped: ${esc(d.error || "unknown error")}</p>`;
+    if (d.framework) {
+      const fw = d.framework;
+      if (fw.summary) h += `<p>${esc(fw.summary)}</p>`;
+      h += renderFramework(fw);
+      if (fw.companies_view) h += `<details class="sec" open><summary>How the listed companies compare</summary><p style="white-space:pre-wrap">${esc(fw.companies_view)}</p></details>`;
+    }
+    body.innerHTML = h;
+  });
+  loadScores().then((sc) => {
+    const el = document.getElementById("ind-top"); if (!el) return;
+    if (!sc) { el.innerHTML = `<p class="tiny">Scorecards are available when this page is opened on claude.ai.</p>`; return; }
+    const list = sc.cards.filter((c) => c.industry === id.replace(/-/g, "_") && c.composite != null).sort((a, b) => b.composite - a.composite).slice(0, 15);
+    el.innerHTML = list.length ? scoreTable(list) : `<p class="tiny">No scorecards for this industry yet.</p>`;
+  });
 }
 
 // ---------- economy
@@ -583,6 +616,76 @@ function drawTechChart(q) {
     <path d="${ma(50)}" fill="none" stroke="var(--accent)" stroke-width="1.4"/><path d="${ma(20)}" fill="none" stroke="var(--muted)" stroke-width="1" stroke-dasharray="2 2"/>
     ${months.map((x) => `<text x="${X(c.indexOf(x)).toFixed(1)}" y="${H - 6}" font-size="10" fill="var(--muted)">${new Date(x.d).toLocaleDateString("en-IN", { month: "short" })}</text>`).join("")}</svg>
     <p class="tiny">Last 12 months, daily candles. Green/red dashed = support/resistance · dotted gold = Fibonacci · solid green = trend lines · blue dash-dot = pattern necklines · ▲▼ = candle patterns in the last 25 sessions (hover for names) · blue line = 50-day average, dotted grey = 20-day.</p>`;
+}
+
+
+// ---------- investing (fundamental scorecards from the page database)
+let SCORES = null;
+async function loadScores() {
+  if (SCORES) return SCORES;
+  await caps;
+  if (!DB) return null;
+  try {
+    const [snap, meta] = await Promise.all([DB.collection("scores").limit(1000).get(), DB.doc("meta/scores").get()]);
+    SCORES = { cards: snap.docs.map((d) => d.data()), meta: meta.exists ? meta.data() : {} };
+    return SCORES;
+  } catch (e) { return null; }
+}
+const gradeCls = (g) => (g === "A" || g === "B" ? "good" : g === "D" || g === "E" ? "bad" : "na");
+function scoreTable(list, showIndustry) {
+  const n = (v, suf = "") => (v == null ? "—" : `${v}${suf}`);
+  return `<div class="scroll"><table style="min-width:980px"><thead><tr><th class="num">Rank</th><th>Company</th>${showIndustry ? "<th>Industry</th>" : ""}<th>Grade</th><th class="num">Score</th><th class="num">Quality</th><th class="num">Value</th><th class="num">Growth</th><th class="num">Owners</th><th class="num">Magic F.</th><th class="num">ROE</th><th class="num">ROCE</th><th class="num">P/E (sector)</th><th class="num">Cash ÷ profit</th><th class="num">Debt-ish*</th><th class="num">Promoter (chg)</th><th class="num">Graham</th></tr></thead><tbody>${
+    list.map((c) => { const m = c.metrics || {}, s = c.scores || {}, mf = c.magic_formula || {}, gp = (c.graham || []).filter((x) => x.pass).length;
+      return `<tr><td class="num">${c.rank ?? "—"}</td><td><div class="name"><a href="#stock-${esc(c.isin)}">${esc(c.symbol)}</a></div><div class="co">${esc(c.name || "")}</div></td>${showIndustry ? `<td class="small">${esc(c.industry_label || "")}</td>` : ""}
+        <td><span class="pill ${gradeCls(c.grade)}">${esc(c.grade || "—")}</span></td><td class="num"><b>${n(c.composite)}</b></td><td class="num">${n(s.quality)}</td><td class="num">${n(s.value)}</td><td class="num">${n(s.growth)}</td><td class="num">${n(s.ownership)}</td>
+        <td class="num">${mf.rank ? `${mf.rank}<span class="tiny">/${mf.of}</span>` : "—"}</td><td class="num">${n(m.roe, "%")}</td><td class="num">${n(m.roce, "%")}</td><td class="num">${n(m.pe)} <span class="tiny">(${n(m.pe_sector)})</span></td>
+        <td class="num">${n(m.cfo_to_profit, "×")}</td><td class="num">${n(m.liabilities_to_equity, "×")}</td><td class="num">${m.promoter_pct ? `${m.promoter_pct}%` : "—"} <span class="tiny">${m.promoter_change != null ? `(${m.promoter_change > 0 ? "+" : ""}${m.promoter_change})` : ""}</span></td><td class="num">${gp}/${(c.graham || []).length}</td></tr>`; }).join("")}</tbody></table></div>
+    <p class="tiny">Scores 0–100. Quality: ROE, ROCE, cash conversion, balance sheet, margins, profit record. Value: P/E, P/B, EV/EBITDA against the sector. Growth: revenue and profit growth. Owners: promoter stake trend. Magic F.: Greenblatt rank across all non-financial companies. *Debt-ish: total liabilities ÷ equity (debt is not reported separately). Source: Upstox fundamentals.</p>`;
+}
+
+const inv = { view: "all", industry: "", grade: "", nofin: false, q: "" };
+function renderInvesting() {
+  app().innerHTML = `<div><h1>Investing</h1><p class="sub">Long-term picks screened on fundamentals only: business quality, value, growth, ownership and the economic backdrop, plus Greenblatt's Magic Formula across all companies. Click a company and press “Analyse now” for the full framework report. Screening output, not investment advice.</p></div>
+    <section class="panel"><div class="controls">
+      <select id="iv-view" aria-label="View"><option value="all">Overall ranking</option><option value="mf">Magic Formula (Greenblatt)</option><option value="best">Top 3 in each industry</option><option value="graham">Passes most Graham tests</option></select>
+      <select id="iv-ind" aria-label="Industry"><option value="">All industries</option>${Object.values(S.industries).map((i) => `<option value="${esc(i.id.replace(/-/g, "_"))}">${esc(i.label)}</option>`).join("")}</select>
+      <select id="iv-grade" aria-label="Grade"><option value="">Any grade</option><option value="A">A only</option><option value="AB">A or B</option></select>
+      <label class="small"><input type="checkbox" id="iv-nofin"> Hide banks & lenders</label>
+      <input type="search" id="iv-q" placeholder="Search company" aria-label="Search"></div>
+      <div id="iv-body"><p class="loading">Loading scorecards…</p></div></section>`;
+  const sync = () => { inv.view = document.getElementById("iv-view").value; inv.industry = document.getElementById("iv-ind").value; inv.grade = document.getElementById("iv-grade").value; inv.nofin = document.getElementById("iv-nofin").checked; inv.q = document.getElementById("iv-q").value.trim().toLowerCase(); drawInvesting(); };
+  ["iv-view", "iv-ind", "iv-grade", "iv-nofin"].forEach((id) => document.getElementById(id).addEventListener("change", sync));
+  document.getElementById("iv-q").addEventListener("input", sync);
+  document.getElementById("iv-view").value = inv.view; document.getElementById("iv-ind").value = inv.industry; document.getElementById("iv-grade").value = inv.grade; document.getElementById("iv-nofin").checked = inv.nofin;
+  drawInvesting();
+}
+async function drawInvesting() {
+  const body = document.getElementById("iv-body"); if (!body) return;
+  const sc = await loadScores();
+  if (!sc) { body.innerHTML = `<p class="notice">Scorecards are read from this page's database: open the page on claude.ai while signed in.</p>`; return; }
+  if (!sc.cards.length) { body.innerHTML = `<p class="small">Scorecards are being built (the first run downloads financials for about 800 companies). Check back shortly.</p>`; return; }
+  let list = sc.cards.filter((c) => c.composite != null);
+  if (inv.industry) list = list.filter((c) => c.industry === inv.industry);
+  if (inv.grade === "A") list = list.filter((c) => c.grade === "A");
+  if (inv.grade === "AB") list = list.filter((c) => c.grade === "A" || c.grade === "B");
+  if (inv.nofin) list = list.filter((c) => c.industry !== "banks" && c.industry !== "nbfc");
+  if (inv.q) list = list.filter((c) => (c.symbol + " " + (c.name || "")).toLowerCase().includes(inv.q));
+  let html = "";
+  if (inv.view === "mf") {
+    list = list.filter((c) => c.magic_formula && c.magic_formula.rank).sort((a, b) => a.magic_formula.rank - b.magic_formula.rank);
+    html = `<p class="small">Greenblatt's method: rank every company on return on capital (ROCE) and on earnings yield (1 ÷ EV/EBITDA), add the two ranks, lowest total first. Banks, lenders and utilities are left out, as in the book. Greenblatt suggests holding a basket of 20–30 of these for a year, not picking one.</p>` + scoreTable(list.slice(0, 50), true);
+  } else if (inv.view === "best") {
+    const by = {}; list.sort((a, b) => b.composite - a.composite).forEach((c) => { (by[c.industry_label] = by[c.industry_label] || []).length < 3 && by[c.industry_label].push(c); });
+    html = Object.entries(by).sort().map(([k, v]) => `<h2 style="margin-top:12px">${esc(k)}</h2>${scoreTable(v, false)}`).join("");
+  } else if (inv.view === "graham") {
+    list = list.filter((c) => (c.graham || []).length >= 4).sort((a, b) => (b.graham.filter((x) => x.pass).length / b.graham.length) - (a.graham.filter((x) => x.pass).length / a.graham.length) || b.composite - a.composite);
+    html = `<p class="small">Companies passing the most of Graham's defensive-investor tests that the data allows (P/E ≤ 15, P/B ≤ 1.5 or P/E×P/B ≤ 22.5, current ratio ≥ 2, profit every year, adequate size).</p>` + scoreTable(list.slice(0, 50), true);
+  } else {
+    list.sort((a, b) => b.composite - a.composite);
+    html = scoreTable(list.slice(0, 100), true);
+  }
+  const meta = sc.meta || {};
+  body.innerHTML = html + `<p class="tiny">${esc(meta.method || "")} ${meta.generated_at ? "Scorecards updated " + ago(meta.generated_at) + "." : ""} ${esc(meta.label || "")}</p>`;
 }
 
 // ---------- trading tab (F&O scan)
