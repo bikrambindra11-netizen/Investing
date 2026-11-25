@@ -37,7 +37,7 @@ def main() -> None:
     ap.add_argument("out")
     ap.add_argument("--charts", type=int, default=800, help="price history for the N most traded stocks")
     ap.add_argument("--news", type=int, default=250, help="news for the N most traded stocks")
-    ap.add_argument("--tech", type=int, default=300, help="candles + chart structure for the N most traded stocks")
+    ap.add_argument("--tech", type=int, default=450, help="candles + chart structure for the N most traded stocks")
     ap.add_argument("--live", type=int, default=1000, help="today's latest price for the N most traded stocks")
     a = ap.parse_args()
     out = Path(a.out)

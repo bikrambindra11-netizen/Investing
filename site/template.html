@@ -606,7 +606,7 @@ function techQ(isin, view) {
 let candleView = "daily";
 function candleSection(isin) {
   const t = techStock(isin);
-  if (!t) return `<section class="panel"><h2>Candlestick chart</h2><p class="small">The marked candle chart is prepared for the 300 most traded stocks. For this one, press “Analyse now” above to build it live.</p></section>`;
+  if (!t) return `<section class="panel"><h2>Candlestick chart</h2><p class="small">The marked candle chart is prepared for the 450 most traded stocks. For this one, press “Analyse now” above to build it live.</p></section>`;
   return `<section class="panel"><h2>Candlestick chart and patterns</h2>
     <div class="ranges" id="cview"><button class="btn ${candleView === "daily" ? "on" : ""}" data-v="daily">Daily · 1 year</button><button class="btn ${candleView === "weekly" ? "on" : ""}" data-v="weekly">Weekly · 2 years</button></div>
     <div class="chart" id="candlechart"></div><div id="candleinfo"></div></section>`;
