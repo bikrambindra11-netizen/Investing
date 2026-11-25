@@ -15,6 +15,29 @@ Buffett
 For banks and other lenders, earnings replace owner earnings (their cash flows mix in deposits and loans)."""
 from math import sqrt
 
+# Which of the three values suit each industry, and why. The margin of safety uses only these.
+METHODS = {
+    "banks": (["graham_number", "graham_formula", "buffett"], "Lenders: book value is the anchor (Graham number), and Buffett's value counts only the profit a bank can pay out after funding loan growth."),
+    "nbfc": (["graham_number", "graham_formula", "buffett"], "Lenders: book value is the anchor (Graham number), and Buffett's value counts only the profit that can be paid out after funding loan growth."),
+    "insurance": (["graham_number", "buffett"], "Insurers: book value and distributable profit; the growth formula misleads because new policies depress early profit."),
+    "it": (["graham_formula", "buffett"], "Asset-light, cash-rich businesses: the Graham number (which needs a large book value) understates them; value comes from earnings and owner earnings."),
+    "fmcg": (["graham_formula", "buffett"], "Brand businesses with high returns on little capital: Buffett's owner-earnings value is the main measure; the Graham number understates them."),
+    "pharma": (["graham_formula", "buffett"], "Value lies in products and approvals, not book assets: earnings-based values fit."),
+    "consumer_durables": (["graham_formula", "buffett"], "Brand-led growers: earnings-based values fit better than book value."),
+    "capital_goods": (["graham_formula", "buffett"], "Order-book driven: earnings and owner earnings fit; book value says little about engineering skill."),
+    "metals": (["graham_number", "buffett"], "Cyclical: Graham's growth formula is not used (growth in a boom does not last); value rests on assets and cycle-average earnings."),
+    "cement": (["graham_number", "buffett"], "Cyclical and asset-heavy: assets (Graham number) and cycle-average owner earnings; no growth extrapolation."),
+    "oil_gas": (["graham_number", "buffett"], "Commodity-driven: assets and cycle-average cash flow; no growth extrapolation."),
+    "chemicals": (["graham_number", "graham_formula", "buffett"], "Mix of commodity and specialty makers: all three, with cycle-average earnings."),
+    "textiles": (["graham_number", "buffett"], "Cyclical, raw-material driven: assets and cycle-average cash flow."),
+    "auto": (["graham_number", "graham_formula", "buffett"], "Cyclical consumer demand: all three on cycle-average earnings."),
+    "power": (["graham_number", "buffett"], "Regulated returns on book value: the Graham number and steady owner earnings fit; growth comes from capacity, not margins."),
+    "realty": (["graham_number"], "Developers book profit only on handover, so earnings and cash flows are lumpy: book value (Graham number) is the anchor."),
+    "gold": (["graham_formula", "buffett"], "Branded jewellers grow with incomes: earnings-based values fit."),
+    "capital_markets": (["graham_formula", "buffett"], "Asset-light, fee-based: earnings-based values fit."),
+}
+CYCLICAL = {"metals", "cement", "oil_gas", "textiles", "chemicals", "auto"}
+DEFAULT_METHODS = (["graham_number", "graham_formula", "buffett"], "All three methods.")
 GRAHAM_BASE_YIELD = 4.4
 LONG_RUN_GROWTH = 4.0   # % a year after year 10, below the bond rate
 MAX_GROWTH = 15.0       # Graham capped growth assumptions; so do we
@@ -32,7 +55,7 @@ def _cagr(new, old, n):
 
 
 def value(ys: list[dict], price: float | None, bond_yield: float | None, financial: bool, graham_checks: list[dict] | None = None,
-          pe: float | None = None, pb: float | None = None, today=None) -> dict:
+          pe: float | None = None, pb: float | None = None, today=None, industry: str = "general") -> dict:
     """ys: statement years newest first (backend.app.statements.years). bond_yield: India 10-year G-sec, %.
     pe, pb: today's P/E and P/B from the data feed. Per-share figures are taken from them (EPS = price / P/E,
     book value per share = price / P/B), because they match today's share count; yearly statement EPS can
@@ -55,6 +78,8 @@ def value(ys: list[dict], price: float | None, bond_yield: float | None, financi
     # Growth from total profit (not EPS), so share-count changes do not distort it
     g_hist = _cagr(y.get("pat"), ys[-1].get("pat"), n)
     g = max(0.0, min(MAX_GROWTH, g_hist)) if g_hist is not None else 0.0
+    if industry in CYCLICAL:
+        g = min(g, LONG_RUN_GROWTH)  # Graham: do not project a cyclical upswing forward
     Y = bond_yield or 7.0
     # Graham valued on normal earnings: scale today's EPS by the 3-year average profit over the latest year's
     pats = [x.get("pat") for x in ys[:3] if x.get("pat") is not None]
@@ -132,15 +157,28 @@ def value(ys: list[dict], price: float | None, bond_yield: float | None, financi
                       if base and shares else "Not computed: owner earnings are negative or missing.",
                       "checks": checks, "passed": sum(c["pass"] for c in checks), "of": len(checks)}
 
-    # --- Price against the values
-    vals = [v for v in (out["graham"]["number"], out["graham"]["formula"], out["buffett"]["value"]) if v]
+    # --- Price against the values that suit this industry
+    use, why = METHODS.get(industry, DEFAULT_METHODS)
+    got = {"graham_number": out["graham"]["number"], "graham_formula": out["graham"]["formula"], "buffett": out["buffett"]["value"]}
+    vals = [got[k] for k in use if got.get(k)]
+    out["methods_used"] = use
+    out["methods_why"] = why
     if price and vals:
-        mid = sorted(vals)[len(vals) // 2] if len(vals) % 2 else sum(sorted(vals)[len(vals) // 2 - 1:len(vals) // 2 + 1]) / 2
+        sv = sorted(vals)
+        mid = sv[len(sv) // 2] if len(sv) % 2 else (sv[len(sv) // 2 - 1] + sv[len(sv) // 2]) / 2
         mos = (1 - price / mid) * 100
         out["value_mid"] = round(mid, 2)
         out["margin_of_safety_pct"] = round(mos, 1)
         out["reading"] = ("price well below value (margin of safety over 30%)" if mos >= 30 else "price below value" if mos >= 10 else
                           "price close to value" if mos > -10 else "price above value")
+    # --- Greenblatt's Magic Formula inputs (ranked across all companies in build_value)
+    nwc = (y.get("current_assets") or 0) - (y.get("current_liabilities") or 0) if y.get("current_assets") is not None else None
+    cap = (max(nwc, 0) + y["non_current_assets"]) if nwc is not None and y.get("non_current_assets") else None
+    ebit = y.get("pbt")
+    out["magic"] = {"roc_pct": round(ebit / cap * 100, 1) if ebit is not None and cap else None,
+                    "excluded": financial or industry == "power",
+                    "how": "Return on capital = pre-tax profit ÷ (net working capital + long-term assets); earnings yield = 1 ÷ EV/EBITDA. "
+                           "Interest and debt are not in the data feed, so pre-tax profit stands in for EBIT. Banks, lenders, insurers and utilities are left out, as in the book."}
     gp = [c for c in out["graham"]["checks"] if c.get("status") in ("pass", "fail", "partial")]
     out["graham"]["passed"] = sum(c["status"] == "pass" for c in gp)
     out["graham"]["of"] = len(gp)

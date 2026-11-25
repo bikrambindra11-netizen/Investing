@@ -52,16 +52,28 @@ def main() -> None:
         price = r["close"]
         kr = analysis.key_ratios(f)
         v = value_models.value(ys, price, bond, ind in FIN, analysis.graham(ind, fin, f, price) if fin["periods"] else [],
-                               pe=(kr.get("P/E") or {}).get("company"), pb=(kr.get("P/B") or {}).get("company"))
+                               pe=(kr.get("P/E") or {}).get("company"), pb=(kr.get("P/B") or {}).get("company"), industry=ind)
+        if v.get("available"):
+            eve = (kr.get("EV/EBITDA") or {}).get("company")
+            v["magic"]["earnings_yield_pct"] = round(100 / eve, 1) if eve and eve > 0 else None
         if not v.get("available"):
             continue
-        c = {"isin": isin, "symbol": r["symbol"], "name": r["name"], "industry": labels.get(ind, ind), "sector": prof.get("sector"),
+        c = {"isin": isin, "symbol": r["symbol"], "name": r["name"], "industry": labels.get(ind, ind), "industry_id": ind, "sector": prof.get("sector"),
              "price": price, "price_date": str(r["price_date"]), "v": v, "years": [{k: y.get(k) for k in YEAR_KEYS} for y in ys],
              "fetched_at": raw.get("fetched_at")}
         cards[isin] = c
         g, b = v["graham"], v["buffett"]
         index.append([isin, r["symbol"], r["name"], labels.get(ind, ind), price, g["number"], g["formula"], b["value"], v.get("value_mid"),
                       v.get("margin_of_safety_pct"), g["passed"], g["of"], b["passed"], b["of"], round((r["turnover"] or 0) / 1e7, 1), 1 if v.get("suspect") else 0])
+    # Greenblatt: rank on return on capital and on earnings yield, add the ranks, lowest total = best
+    elig = [i for i, c in cards.items() if not c["v"]["magic"]["excluded"] and c["v"]["magic"]["roc_pct"] is not None
+            and c["v"]["magic"].get("earnings_yield_pct") and (by[i]["turnover"] or 0) >= 1e7 and not c["v"].get("suspect")]
+    r1 = {i: k for k, i in enumerate(sorted(elig, key=lambda i: -cards[i]["v"]["magic"]["roc_pct"]), 1)}
+    r2 = {i: k for k, i in enumerate(sorted(elig, key=lambda i: -cards[i]["v"]["magic"]["earnings_yield_pct"]), 1)}
+    for pos, i in enumerate(sorted(elig, key=lambda i: (r1[i] + r2[i], r1[i])), 1):
+        cards[i]["v"]["magic"].update(rank=pos, of=len(elig), roc_rank=r1[i], ey_rank=r2[i])
+    mf = {i: cards[i]["v"]["magic"] for i in cards}
+    index = [row + [mf[row[0]].get("rank"), mf[row[0]].get("roc_pct"), mf[row[0]].get("earnings_yield_pct")] for row in index]
     out.mkdir(parents=True, exist_ok=True)
     for old in out.glob("*.json"):
         old.unlink()
@@ -77,7 +89,8 @@ def main() -> None:
     meta = {"chunks": n, "index_parts": len(parts), "companies": len(cards), "bond_yield": bond, "bond_yield_date": pts[-1][0] if pts else None,
             "prices_as_of": as_of, "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "columns": ["isin", "symbol", "name", "industry", "price", "graham_number", "graham_formula", "buffett_value", "value_mid",
-                        "margin_of_safety_pct", "graham_passed", "graham_of", "buffett_passed", "buffett_of", "turnover_cr", "flagged"]}
+                        "margin_of_safety_pct", "graham_passed", "graham_of", "buffett_passed", "buffett_of", "turnover_cr", "flagged", "mf_rank", "roc_pct", "earnings_yield_pct"],
+            "magic_formula_universe": len(elig)}
     (out / "meta.json").write_text(json.dumps(meta, default=str))
     sizes = [os.path.getsize(p) for p in out.glob("*.json")]
     print(f"{len(cards)} companies valued, {n} card documents (largest {max(sizes) // 1024} KB), {len(parts)} index documents")

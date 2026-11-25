@@ -333,7 +333,9 @@ async function valueIndex() {
 function valueBlock(c, live) {
   const v = c.v, g = v.graham, b = v.buffett, p = live ?? v.price;
   const mos = (val) => (val && p ? (1 - p / val) * 100 : null);
-  const row = (name, val, how) => `<tr><td><b>${name}</b><div class="tiny">${esc(how)}</div></td><td class="num">${val ? "₹" + price(val) : "—"}</td><td class="num ${cls(mos(val))}">${val ? pct(mos(val)) : "—"}</td></tr>`;
+  const used = v.methods_used || ["graham_number", "graham_formula", "buffett"];
+  const row = (key, name, val, how) => { const u = used.includes(key);
+    return `<tr style="${u ? "" : "opacity:.55"}"><td><b>${name}</b>${u ? "" : ` <span class="pill na">not used for this industry</span>`}<div class="tiny">${esc(how)}</div></td><td class="num">${val ? "₹" + price(val) : "—"}</td><td class="num ${cls(mos(val))}">${val ? pct(mos(val)) : "—"}</td></tr>`; };
   const mid = v.value_mid, m = mos(mid);
   const verdict = m == null ? "Not enough data to value" : m >= 30 ? "Price is well below value (margin of safety over 30%)" : m >= 10 ? "Price is below value" : m > -10 ? "Price is close to value" : "Price is above value";
   const ck = (list, isG) => list.map((x) => { const ok = isG ? x.status === "pass" : x.pass, na = isG && !["pass", "fail", "partial"].includes(x.status);
@@ -343,9 +345,11 @@ function valueBlock(c, live) {
       <p class="small" style="margin:4px 0 0">Price ₹${price(p)} · middle value ₹${mid ? price(mid) : "—"} · margin of safety ${m == null ? "—" : pct(m)}</p>
       ${(v.flags || []).map((f) => `<p class="small" style="margin:6px 0 0"><b>Check:</b> ${esc(f)}</p>`).join("")}</section>
     <section class="panel"><div class="scroll"><table><thead><tr><th>Method</th><th class="num">Value per share</th><th class="num">Margin of safety*</th></tr></thead><tbody>
-      ${row("Graham number", g.number, "√(22.5 × EPS × book value per share): the most a defensive investor should pay (P/E 15 × P/B 1.5)")}
-      ${row("Graham formula", g.formula, g.how.split("; ")[1] || g.how)}
-      ${row("Buffett: owner earnings value", b.value, b.how)}</tbody></table></div>
+      ${row("graham_number", "Graham number", g.number, "√(22.5 × EPS × book value per share): the most a defensive investor should pay (P/E 15 × P/B 1.5)")}
+      ${row("graham_formula", "Graham formula", g.formula, g.how.split("; ")[1] || g.how)}
+      ${row("buffett", "Buffett: owner earnings value", b.value, b.how)}</tbody></table></div>
+      <p class="small"><b>Methods chosen for ${esc(c.industry)}:</b> ${esc(v.methods_why || "")} The margin of safety uses the middle of the values used.</p>
+      ${v.magic ? `<h3>Greenblatt's Magic Formula</h3><p class="small">${v.magic.excluded ? "Left out: Greenblatt excludes banks, lenders, insurers and utilities." : v.magic.rank ? `Rank <b>${v.magic.rank}</b> of ${v.magic.of}: return on capital ${v.magic.roc_pct}% (rank ${v.magic.roc_rank}), earnings yield ${v.magic.earnings_yield_pct}% (rank ${v.magic.ey_rank}). Greenblatt buys the best-ranked 20–30 and holds each for a year.` : "Not ranked (return on capital or earnings yield missing or negative, or under ₹1 crore traded a day)."}</p><p class="tiny">${esc(v.magic.how)}</p>` : ""}
       <p class="tiny">*Margin of safety = how far the price is below the value (negative: price above value). Inputs: ${Object.entries(v.inputs).map(([k, x]) => `${esc(k)} ${x ?? "—"}`).join(" · ")}. India 10-year government bond yield used as the bond rate.</p>
       <div class="two">
         <div><h3>Graham's defensive checks (${g.passed}/${g.of})</h3><ul class="small" style="padding-left:0;list-style:none">${ck(g.checks, true)}</ul></div>
@@ -1080,13 +1084,14 @@ function scoreTable(list, showIndustry) {
 
 const inv = { view: "all", industry: "", grade: "", nofin: false, q: "" };
 function renderInvesting() {
-  app().innerHTML = `<div><h1>Investing</h1><p class="sub">Every company valued by Graham's and Buffett's methods from its own statements, ranked by margin of safety (how far the price is below the value).</p></div>
+  app().innerHTML = `<div><h1>Investing</h1><p class="sub">Every company valued by Graham's and Buffett's methods (chosen to suit its industry) and ranked by Greenblatt's Magic Formula, from its own statements.</p></div>
     <section class="panel"><div class="controls">
+      <select id="iv-by" aria-label="Rank by"><option value="mos">Rank by margin of safety (Graham & Buffett)</option><option value="mf">Rank by Magic Formula (Greenblatt)</option></select>
       <select id="iv-q2" aria-label="Quality"><option value="4">Passes at least 4 of Buffett's quality checks</option><option value="3">At least 3</option><option value="0">All companies</option></select>
       <select id="iv-liq" aria-label="Liquidity"><option value="1">₹1 crore+ traded a day</option><option value="0">Any</option></select>
       <input type="search" id="iv-s" placeholder="Search company" aria-label="Search"></div>
       <div id="iv-body"><p class="loading">Loading values…</p></div></section>`;
-  ["iv-q2", "iv-liq"].forEach((id) => document.getElementById(id).addEventListener("change", drawInvesting));
+  ["iv-by", "iv-q2", "iv-liq"].forEach((id) => document.getElementById(id).addEventListener("change", drawInvesting));
   document.getElementById("iv-s").addEventListener("input", drawInvesting);
   drawInvesting();
 }
@@ -1095,14 +1100,15 @@ async function drawInvesting() {
   const idx = await valueIndex();
   if (!idx) { body.innerHTML = `<p class="notice">Values are read from this page's database: open the page on claude.ai while signed in.</p>`; return; }
   const minQ = +document.getElementById("iv-q2").value, liq = document.getElementById("iv-liq").value === "1", q = document.getElementById("iv-s").value.trim().toLowerCase();
-  let list = idx.filter((r) => r.margin_of_safety_pct != null && !r.flagged && r.graham_number && r.buffett_passed >= minQ && (!liq || r.turnover_cr >= 1) && (!q || (r.symbol + " " + r.name).toLowerCase().includes(q)));
-  list.sort((a, b) => b.margin_of_safety_pct - a.margin_of_safety_pct);
+  const by = document.getElementById("iv-by").value;
+  let list = idx.filter((r) => (by === "mf" ? r.mf_rank : r.margin_of_safety_pct != null && !r.flagged) && r.buffett_passed >= minQ && (!liq || r.turnover_cr >= 1) && (!q || (r.symbol + " " + r.name).toLowerCase().includes(q)));
+  list.sort(by === "mf" ? (a, b) => a.mf_rank - b.mf_rank : (a, b) => b.margin_of_safety_pct - a.margin_of_safety_pct);
   const m = VAL.meta;
-  body.innerHTML = `<div class="scroll"><table style="min-width:900px"><thead><tr><th class="num">#</th><th>Company</th><th class="num">Price</th><th class="num">Graham number</th><th class="num">Graham formula</th><th class="num">Buffett value</th><th class="num">Margin of safety</th><th class="num">Buffett checks</th><th class="num">Graham checks</th></tr></thead><tbody>${
+  body.innerHTML = `<div class="scroll"><table style="min-width:900px"><thead><tr><th class="num">#</th><th>Company</th><th class="num">Price</th><th class="num">Graham number</th><th class="num">Graham formula</th><th class="num">Buffett value</th><th class="num">Margin of safety</th><th class="num">Magic Formula rank</th><th class="num">Return on capital</th><th class="num">Earnings yield</th><th class="num">Buffett checks</th><th class="num">Graham checks</th></tr></thead><tbody>${
     list.slice(0, 200).map((r, i) => `<tr><td class="num">${i + 1}</td><td><div class="name"><a href="#stock-${esc(r.isin)}">${esc(r.symbol)}</a></div><div class="co">${esc(r.name || "")} · ${esc(r.industry || "")}</div></td>
       <td class="num">₹${price(r.price)}</td><td class="num">${r.graham_number ? "₹" + price(r.graham_number) : "—"}</td><td class="num">${r.graham_formula ? "₹" + price(r.graham_formula) : "—"}</td><td class="num">${r.buffett_value ? "₹" + price(r.buffett_value) : "—"}</td>
-      <td class="num ${cls(r.margin_of_safety_pct)}"><b>${pct(r.margin_of_safety_pct)}</b></td><td class="num">${r.buffett_passed}/${r.buffett_of}</td><td class="num">${r.graham_passed}/${r.graham_of}</td></tr>`).join("")}</tbody></table></div>
-    <p class="tiny">${list.length} companies shown of ${idx.length} valued. Left out: companies with losses (no Graham value) and ${idx.filter((r) => r.flagged).length} whose P/E below 4 suggests one-off gains or figures from before a demerger (open them to see why). Margin of safety uses the middle of the three values. Bond rate: India 10-year government bond ${m.bond_yield}% (${esc(m.bond_yield_date || "")}). Prices as of the last close. Built ${ago(m.built_at)}. Not investment advice.</p>`;
+      <td class="num ${cls(r.margin_of_safety_pct)}"><b>${r.margin_of_safety_pct != null ? pct(r.margin_of_safety_pct) : "—"}</b></td><td class="num">${r.mf_rank ?? "—"}</td><td class="num">${r.roc_pct != null ? r.roc_pct + "%" : "—"}</td><td class="num">${r.earnings_yield_pct != null ? r.earnings_yield_pct + "%" : "—"}</td><td class="num">${r.buffett_passed}/${r.buffett_of}</td><td class="num">${r.graham_passed}/${r.graham_of}</td></tr>`).join("")}</tbody></table></div>
+    <p class="tiny">${by === "mf" ? `Magic Formula: every non-financial, non-utility company with ₹1 crore+ traded a day is ranked on return on capital and on earnings yield; the two ranks are added, lowest total first (${m.magic_formula_universe} companies). ` : ""}${list.length} companies shown of ${idx.length} valued. Margin of safety uses the methods that suit each industry. Left out: companies with losses (no Graham value) and ${idx.filter((r) => r.flagged).length} whose P/E below 4 suggests one-off gains or figures from before a demerger (open them to see why). Margin of safety uses the middle of the three values. Bond rate: India 10-year government bond ${m.bond_yield}% (${esc(m.bond_yield_date || "")}). Prices as of the last close. Built ${ago(m.built_at)}. Not investment advice.</p>`;
 }
 
 // ---------- trading tab (F&O scan)
