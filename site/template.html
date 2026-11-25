@@ -1089,14 +1089,26 @@ async function renderSector(id) {
       ranks[f] = {}; have.forEach((r, i) => (ranks[f][r.isin] = i > 0 && F.get(r) === F.get(have[i - 1]) ? ranks[f][have[i - 1].isin] : i + 1));  // equal values share a rank
     });
     const total = (r) => cfg.factors.reduce((t, f) => t + (ranks[f][r.isin] ?? rows.length), 0);
+    // Greenblatt's combined rank within the sector: rank on return on capital + rank on earnings yield, lowest sum first
+    const mfx = ["banks", "nbfc", "insurance", "power"].includes(key);
+    const mfRank = {};
+    if (!mfx) {
+      const rk = (get) => { const h = rows.filter((r) => get(r) != null).sort((a, b) => get(b) - get(a)), o = {}; h.forEach((r, i) => (o[r.isin] = i + 1)); return o; };
+      const r1 = rk((r) => r.roc_pct), r2 = rk((r) => r.earnings_yield_pct);
+      rows.filter((r) => r1[r.isin] && r2[r.isin]).sort((a, b) => r1[a.isin] + r2[a.isin] - (r1[b.isin] + r2[b.isin]) || r1[a.isin] - r1[b.isin])
+        .forEach((r, i) => (mfRank[r.isin] = { pos: i + 1, roc: r1[r.isin], ey: r2[r.isin] }));
+    }
+    const nMf = Object.keys(mfRank).length;
     const list = rows.slice().sort((a, b) => total(a) - total(b));
     const cyc = cfg.factors.includes("cycle");
-    body.innerHTML = list.length ? `<div class="scroll"><table style="min-width:980px"><thead><tr><th class="num">#</th><th>Company</th><th class="num">Price</th><th class="num">Value (middle)</th>${cfg.factors.map((f) => `<th class="num">${FACTOR[f].label}</th>`).join("")}${cyc ? "" : "<th>Cycle</th>"}<th class="num">Buffett checks</th><th class="num">Graham checks</th></tr></thead><tbody>${
+    body.innerHTML = list.length ? `<div class="scroll"><table style="min-width:980px"><thead><tr><th class="num">#</th><th>Company</th><th class="num">Price</th><th class="num">Value (middle)</th>${cfg.factors.map((f) => `<th class="num">${FACTOR[f].label}</th>`).join("")}${cyc ? "" : "<th>Cycle</th>"}<th class="num">Magic Formula combined rank</th><th class="num">Buffett checks</th><th class="num">Graham checks</th></tr></thead><tbody>${
       list.map((r, i) => `<tr><td class="num">${i + 1}</td><td><div class="name"><a href="#stock-${esc(r.isin)}">${esc(r.symbol)}</a></div><div class="co">${esc(r.name || "")}</div></td>
         <td class="num">₹${price(r.price)}</td><td class="num">${r.value_mid ? "₹" + price(r.value_mid) : "—"}</td>
         ${cfg.factors.map((f) => { const v = FACTOR[f].get(r); return `<td class="num ${f === "mos" ? cls(v) : ""}">${v == null ? "—" : FACTOR[f].fmt(v, r)}<div class="tiny">${ranks[f][r.isin] ? "rank " + ranks[f][r.isin] : ""}</div></td>`; }).join("")}
-        ${cyc ? "" : `<td class="small">${esc(r.cycle || "not cyclical")}</td>`}<td class="num">${r.buffett_passed}/${r.buffett_of}</td><td class="num">${r.graham_passed}/${r.graham_of}</td></tr>`).join("")}</tbody></table></div>
-      <p class="tiny">Each measure is ranked within this sector; the ranks are added and the lowest total comes first. Margin of safety uses the Graham/Buffett values that suit this industry. Left out: companies whose P/E below 4 suggests one-off gains or pre-demerger figures. ${rows.length} companies. Built ${ago(m.built_at)}. Not investment advice.</p>`
+        ${cyc ? "" : `<td class="small">${esc(r.cycle || "not cyclical")}</td>`}
+        <td class="num">${mfx ? `<span class="tiny">n/a (Greenblatt excludes)</span>` : mfRank[r.isin] ? `<b>${mfRank[r.isin].pos}</b> <span class="tiny">of ${nMf}</span><div class="tiny">ROC #${mfRank[r.isin].roc} + EY #${mfRank[r.isin].ey}${r.mf_rank ? ` · all-market #${r.mf_rank}` : ""}</div>` : "—"}</td>
+        <td class="num">${r.buffett_passed}/${r.buffett_of}</td><td class="num">${r.graham_passed}/${r.graham_of}</td></tr>`).join("")}</tbody></table></div>
+      <p class="tiny">Each measure is ranked within this sector; the ranks are added and the lowest total comes first. Magic Formula combined rank: Greenblatt's method within this sector (rank on return on capital + rank on earnings yield, lowest sum = 1), with the all-market rank beside it. Margin of safety uses the Graham/Buffett values that suit this industry. Left out: companies whose P/E below 4 suggests one-off gains or pre-demerger figures. ${rows.length} companies. Built ${ago(m.built_at)}. Not investment advice.</p>`
       : `<p class="small">No valued companies in this sector yet (statements are still being collected).</p>`;
   };
   document.getElementById("sec-liq").addEventListener("change", draw);
