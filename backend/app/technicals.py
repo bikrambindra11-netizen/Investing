@@ -1,5 +1,5 @@
-"""Technical analysis from daily candles: trend, momentum, volatility, volume, and support /
-resistance levels, each with a plain-English reading. Pure functions; candles oldest first."""
+"""Chart facts from daily candles: moving averages, momentum, volatility, volume, and support /
+resistance levels. Facts only, no buy/sell signals. Pure functions; candles oldest first."""
 from statistics import mean, pstdev
 
 
@@ -112,67 +112,28 @@ def analyse(c: list[dict], price: float | None = None) -> dict:
     year = c[-250:]
     hi52, lo52 = max(x["high"] for x in year), min(x["low"] for x in year)
 
-    signals, score = [], 0.0
-
-    def sig(text: str, weight: float):
-        nonlocal score
-        score += weight
-        signals.append({"text": text, "effect": "bullish" if weight > 0 else "bearish" if weight < 0 else "neutral"})
-
+    obs = []  # plain facts, no buy/sell reading
     if s200:
-        if price > s200:
-            sig(f"Price is above its 200-day average (₹{s200}): long-term uptrend.", 1)
-        else:
-            sig(f"Price is below its 200-day average (₹{s200}): long-term downtrend.", -1)
+        obs.append(f"Price is {abs(price / s200 - 1) * 100:.1f}% {'above' if price > s200 else 'below'} its 200-day average (₹{s200}).")
     if s50 and s200:
-        sig("50-day average is above the 200-day (golden-cross structure)." if s50 > s200
-            else "50-day average is below the 200-day (death-cross structure).", 0.5 if s50 > s200 else -0.5)
+        obs.append(f"50-day average (₹{s50}) is {'above' if s50 > s200 else 'below'} the 200-day average.")
     if s20:
-        sig(f"Price {'above' if price > s20 else 'below'} its 20-day average (₹{s20}): short-term {'strength' if price > s20 else 'weakness'}.",
-            0.5 if price > s20 else -0.5)
+        obs.append(f"Price is {abs(price / s20 - 1) * 100:.1f}% {'above' if price > s20 else 'below'} its 20-day average (₹{s20}).")
     if r is not None:
-        if r >= 70:
-            sig(f"RSI {r}: overbought; a pause or pullback is common from here.", -0.5)
-        elif r <= 30:
-            sig(f"RSI {r}: oversold; a bounce is common from here.", 0.5)
-        elif r >= 55:
-            sig(f"RSI {r}: healthy upward momentum.", 0.5)
-        elif r <= 45:
-            sig(f"RSI {r}: weak momentum.", -0.5)
-        else:
-            sig(f"RSI {r}: neutral momentum.", 0)
-    if m:
-        if m["crossed_up"]:
-            sig("MACD just crossed above its signal line: fresh buy signal.", 1)
-        elif m["crossed_down"]:
-            sig("MACD just crossed below its signal line: fresh sell signal.", -1)
-        else:
-            sig(f"MACD is {'above' if m['histogram'] > 0 else 'below'} its signal line.", 0.5 if m["histogram"] > 0 else -0.5)
-    if bb and bb["position_pct"] is not None:
-        if bb["position_pct"] >= 100:
-            sig("Closed above the upper Bollinger band: strong but stretched.", 0)
-        elif bb["position_pct"] <= 0:
-            sig("Closed below the lower Bollinger band: weak but stretched.", 0)
+        obs.append(f"RSI is {r}" + (" (above 70, historically stretched)." if r >= 70 else " (below 30, historically stretched)." if r <= 30 else "."))
+    if m and (m["crossed_up"] or m["crossed_down"]):
+        obs.append(f"MACD crossed {'above' if m['crossed_up'] else 'below'} its signal line on the last day.")
+    if bb and bb["position_pct"] is not None and (bb["position_pct"] >= 100 or bb["position_pct"] <= 0):
+        obs.append(f"Closed {'above the upper' if bb['position_pct'] >= 100 else 'below the lower'} Bollinger band.")
     if vol_ratio:
-        if vol_ratio >= 1.5:
-            day_up = closes[-1] >= closes[-2]
-            sig(f"Volume {vol_ratio}× the 20-day average on an {'up' if day_up else 'down'} day: strong {'buying' if day_up else 'selling'}.",
-                0.5 if day_up else -0.5)
-    if price >= hi52 * 0.98:
-        sig("Trading near its 52-week high: breakout territory.", 0.5)
-    if price <= lo52 * 1.02:
-        sig("Trading near its 52-week low.", -0.5)
-
-    max_score = 5.5
-    norm = max(-1, min(1, score / max_score))
-    bias = "bullish" if norm >= 0.25 else "bearish" if norm <= -0.25 else "neutral"
+        obs.append(f"Last day's volume was {vol_ratio}× the 20-day average.")
+    obs.append(f"52-week range ₹{lo52:,.2f} – ₹{hi52:,.2f}; price is {(price / hi52 - 1) * 100:.1f}% from the high.")
     return {
         "available": True, "as_of": c[-1]["date"], "price": price,
         "moving_averages": {"sma20": s20, "sma50": s50, "sma200": s200},
         "rsi14": r, "macd": m, "atr14": a, "atr_pct": round(a / price * 100, 2) if a else None,
         "bollinger": bb, "volume_ratio": vol_ratio, "high_52w": hi52, "low_52w": lo52,
         "supports": sup, "resistances": res, "pivots": pivots(c[-1]),
-        "signals": signals, "score": round(norm, 2), "bias": bias,
-        "summary": f"Technical picture is {bias} ({len([s for s in signals if s['effect'] == 'bullish'])} bullish, "
-                   f"{len([s for s in signals if s['effect'] == 'bearish'])} bearish signals).",
+        "observations": obs,
+        "note": "Chart facts only. They are one input among many and are read together with the business, the economy, news and positioning.",
     }

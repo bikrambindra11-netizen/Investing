@@ -112,7 +112,7 @@ footer { font-size: 12px; color: var(--muted); padding-block: 0 30px }
     <a href="#market" data-tab="market">Market</a>
     <a href="#industries" data-tab="industries">Industries</a>
     <a href="#economy" data-tab="economy">Economy</a>
-    <a href="#trading" data-tab="trading">Trading</a>
+    <a href="#trading" data-tab="trading">Market pulse</a>
   </nav>
   <span class="fresh" id="fresh">Loading data…</span>
 </div></header>
@@ -301,7 +301,7 @@ async function renderStock(isin) {
         <div class="num ${cls(c.ch)}">${pct(c.ch)}</div>
         <div class="tiny">${c.live ? '<span class="live-dot"></span>' : ""}${esc(c.src || NA)} · ${when(c.at)}</div></div>
     </div>
-    <section class="live-box" id="live"><div class="live-head"><div><h2>Live analysis</h2><p class="sub">Claude collects fresh prices, financials, the option chain and news, reads the company's annual report, presentations and con calls, and answers your full framework. Takes about 5–10 minutes.</p></div>
+    <section class="live-box" id="live"><div class="live-head"><div><h2>Live analysis</h2><p class="sub">Claude collects fresh prices, financials, the option chain, news and economy data, reads the company's annual report, presentations and con calls, answers your full framework and weighs everything together. Takes about 5–10 minutes. Analysis only; you decide.</p></div>
       <button class="btn primary" id="analyse">Analyse now</button></div><div id="live-body"></div></section>
     <section class="verdict ${tone}"><div class="eyebrow">Quick view (from the last update)</div>
       <p class="big">${esc(s.n)}: the economic backdrop for ${esc(m.label.toLowerCase())} is ${mood}.</p>
@@ -437,7 +437,7 @@ function kv(k, v) { return `<div class="stat"><div class="k">${esc(k)}</div><div
 function renderQuant(q, fw) {
   const r = q.rating || {}, fr = (fw && fw.final_rating) || {};
   const grade = fr.grade || r.grade, score = fr.score ?? r.score;
-  const t = q.technicals || {}, idea = q.trade_idea, mf = q.magic_formula || {}, iv = q.intrinsic_value || {}, v = q.valuation;
+  const t = q.technicals || {}, pos = q.positioning, mf = q.magic_formula || {}, iv = q.intrinsic_value || {}, v = q.valuation;
   const parts = Object.entries(r.parts || {}).map(([k, p]) => `<tr><td>${esc(k.replace("_", " "))}</td><td class="num">${p.score == null ? NA : Math.round(p.score * 100)}</td><td class="small">${esc(p.note)}</td></tr>`).join("");
   let h = `<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><span class="grade ${esc(grade || "")}">${esc(grade || "—")}</span>
     <div><div class="name">Rating ${score ?? NA}/100 ${fr.grade && fr.grade !== r.grade ? `<span class="tiny">(numbers alone: ${esc(r.grade)} ${r.score})</span>` : ""}</div>
@@ -448,7 +448,7 @@ function renderQuant(q, fw) {
   // Technicals
   if (t.available) {
     const lv = (arr) => (arr || []).map((l) => `₹${price(l.level)} <span class="tiny">(${l.touches} touch${l.touches === 1 ? "" : "es"}, ${pct(l.distance_pct)})</span>`).join("<br>") || NA;
-    h += `<details class="sec" open><summary>Chart & indicators — ${esc(t.bias)}</summary>
+    h += `<details class="sec" open><summary>Chart, levels and indicators (facts)</summary>
       <div class="chart" id="techchart"></div>
       <div class="grid kv">${kv("Support", lv(t.supports))}${kv("Resistance", lv(t.resistances))}
         ${kv("20 / 50 / 200-day avg", `${price(t.moving_averages.sma20)} / ${price(t.moving_averages.sma50)} / ${price(t.moving_averages.sma200)}`)}
@@ -456,13 +456,13 @@ function renderQuant(q, fw) {
         ${kv("ATR (14)", t.atr14 ? `₹${t.atr14} (${t.atr_pct}%)` : NA)}${kv("Bollinger", t.bollinger ? `${price(t.bollinger.lower)} – ${price(t.bollinger.upper)}` : NA)}
         ${kv("Volume vs 20-day avg", t.volume_ratio ? t.volume_ratio + "×" : NA)}
         ${kv("Pivot / R1 / S1", `${price(t.pivots.pivot)} / ${price(t.pivots.r1)} / ${price(t.pivots.s1)}`)}</div>
-      <ul class="small">${t.signals.map((x) => `<li><span class="pill ${x.effect === "bullish" ? "good" : x.effect === "bearish" ? "bad" : "na"}">${esc(x.effect)}</span> ${esc(x.text)}</li>`).join("")}</ul></details>`;
+      <ul class="small">${(t.observations || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul><p class="tiny">${esc(t.note || "")}</p></details>`;
   }
   // Options & trade idea
   if (q.fno && q.fno.has_fno) {
     const oc = q.option_chain || {};
-    h += `<details class="sec" open><summary>Futures & options — setup analysis</summary>`;
-    if (idea) h += setupBlock(idea);
+    h += `<details class="sec" open><summary>Levels and option-market positioning</summary>`;
+    if (pos) h += setupBlock(pos);
     if (oc.available) {
       h += `<p class="small">${(oc.reading || []).map(esc).join(" ")} Max pain ₹${price(oc.max_pain)} · ATM implied volatility ${oc.atm_iv ?? NA}% · expiry ${esc(oc.expiry)}</p>
         <div class="scroll"><table style="min-width:560px"><thead><tr><th class="num">Call price</th><th class="num">Call OI</th><th class="num">Strike</th><th class="num">Put price</th><th class="num">Put OI</th></tr></thead><tbody>${(oc.strikes || []).map((r) => `<tr${r.strike === oc.atm_strike ? ' style="background:var(--soft)"' : ""}><td class="num">${price(r.ce_ltp)}</td><td class="num">${vol(r.ce_oi)}</td><td class="num"><b>${r.strike}</b></td><td class="num">${price(r.pe_ltp)}</td><td class="num">${vol(r.pe_oi)}</td></tr>`).join("")}</tbody></table></div>`;
@@ -502,31 +502,38 @@ function renderQuant(q, fw) {
   return h;
 }
 
-function setupBlock(idea) {
-  const L = idea.levels || {};
+function setupBlock(pos) {
+  const L = pos.levels || {}, em = pos.expected_move;
   const lv = (a) => (a && a.length ? a.map((x) => "₹" + price(x)).join(", ") : NA);
-  return `<div class="idea ${idea.direction || ""}"><div class="name">${esc(idea.view)}</div>
-    ${idea.agree && idea.agree.length ? `<p class="small">Pointing the same way: ${esc(idea.agree.join(", "))}${idea.disagree && idea.disagree.length ? ` · pointing the other way: ${esc(idea.disagree.join(", "))}` : ""}.</p>` : ""}
-    <div class="grid kv">${kv("Support", lv(L.supports))}${kv("Resistance", lv(L.resistances))}
+  return `<div class="idea"><div class="grid kv">${kv("Support", lv(L.supports))}${kv("Resistance", lv(L.resistances))}
       ${L.pivots ? kv("Pivot / R1 / S1", `${price(L.pivots.pivot)} / ${price(L.pivots.r1)} / ${price(L.pivots.s1)}`) : ""}
       ${L.atr ? kv("Normal daily move (ATR)", `₹${price(L.atr)} (${L.atr_pct}%)`) : ""}
+      ${em ? kv(`Expected range by ${esc(em.expiry)}`, `₹${price(em.low)} – ₹${price(em.high)} <span class="tiny">(±${em.pct}%)</span>`) : ""}
       ${L.max_pain != null ? kv("Max pain", "₹" + price(L.max_pain)) : ""}
       ${L.call_oi_wall != null ? kv("Most call OI / put OI", `₹${price(L.call_oi_wall)} / ₹${price(L.put_oi_wall)}`) : ""}</div>
-    ${(idea.scenarios || []).length ? `<p class="small" style="margin-bottom:0"><b>Scenarios</b></p><ul class="small">${idea.scenarios.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
-    ${(idea.option_facts || []).length ? `<p class="small" style="margin-bottom:0"><b>Option data</b></p><ul class="small">${idea.option_facts.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
-    <div class="scroll"><table><thead><tr><th>Evidence</th><th class="num">Score (−1 to +1)</th><th>Note</th></tr></thead><tbody>${idea.evidence.map((e) => `<tr><td>${esc(e.factor)}</td><td class="num ${cls(e.score)}">${e.score}</td><td class="small">${esc(e.note)}</td></tr>`).join("")}</tbody></table></div>
-    <p class="tiny">${esc(idea.label)}</p></div>`;
+    ${(pos.facts || []).length ? `<ul class="small">${pos.facts.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+    <p class="tiny">${esc(pos.label || "")}</p></div>`;
 }
 
 function renderFramework(fw) {
   let h = "";
+  const bp = fw.big_picture;
+  if (bp) {
+    const list = (t, a) => (a && a.length ? `<div><div class="q">${t}</div><ul class="small">${a.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>` : "");
+    h += `<details class="sec" open><summary>Big picture</summary><div class="qa">
+      ${bp.overview ? `<p>${esc(bp.overview)}</p>` : ""}
+      ${bp.priced_in ? `<div><div class="q">What the market is pricing in</div><div class="a">${esc(bp.priced_in)}</div></div>` : ""}
+      ${list("What is driving it now", bp.drivers)}${list("Bull case", bp.bull_case)}${list("Bear case", bp.bear_case)}
+      ${list("Upcoming triggers", bp.catalysts)}${list("What to watch", bp.watch)}${list("What would change the view", bp.what_changes_view)}
+    </div></details>`;
+  }
   if (fw.management || fw.capital_allocation || fw.strategy) {
     h += `<div class="grid kv">${fw.management ? kv("Management", `${esc(fw.management.grade)}<div class="tiny">${esc(fw.management.reason)}</div>`) : ""}${fw.capital_allocation ? kv("Capital allocation", `${esc(fw.capital_allocation.grade)}<div class="tiny">${esc(fw.capital_allocation.reason)}</div>`) : ""}${fw.strategy ? kv("Strategy", esc(fw.strategy)) : ""}</div>`;
   }
   for (const sec of fw.sections || []) {
     h += `<details class="sec" open><summary>${esc(sec.title)}</summary><div class="qa">${(sec.items || []).map((it) => `<div><div class="q">${esc(it.question)}</div><div class="a">${esc(it.answer)}</div>${(it.sources || []).length ? `<div class="s">${it.sources.map((x) => { const u = safeUrl(x.url); return u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(x.title || u)}</a>` : esc(x.title); }).join(" · ")}</div>` : ""}</div>`).join("")}</div></details>`;
   }
-  if (fw.trade_view) h += `<details class="sec" open><summary>Trading view (analysis, not a recommendation)</summary><p>${esc(fw.trade_view)}</p></details>`;
+  if (fw.trade_view) h += `<details class="sec" open><summary>Trading context (analysis, not a recommendation)</summary><p>${esc(fw.trade_view)}</p></details>`;
   h += `<p class="tiny" style="font-weight:600">Screening and research output only. Not investment advice.</p>`;
   return h;
 }
@@ -552,23 +559,26 @@ function drawTechChart(q) {
 
 // ---------- trading tab (F&O scan)
 function renderTrading() {
-  app().innerHTML = `<div><h1>Trading</h1><p class="sub">Scan all ${int.format(218)} stocks that have futures & options: chart signals, live prices, option chains and news. Ranks where the signals agree most and shows levels, scenarios and option data. You decide any positions.</p></div>
-    <section class="live-box"><div class="live-head"><div><h2>F&O scan</h2><p class="sub">Runs live in about 3–5 minutes.</p></div><button class="btn primary" id="scan">Scan F&O now</button></div><div id="scan-body"></div></section>`;
+  app().innerHTML = `<div><h1>Market pulse</h1><p class="sub">Where something unusual is happening among the ${int.format(218)} stocks with futures & options: big moves, heavy volume, option build-ups, volatility spikes, key levels and 52-week extremes. Claude reads the news and explains the common threads. Facts and context, not recommendations.</p></div>
+    <section class="live-box"><div class="live-head"><div><h2>Pulse check</h2><p class="sub">Runs live in about 3–5 minutes.</p></div><button class="btn primary" id="scan">Check the market now</button></div><div id="scan-body"></div></section>`;
   const btn = document.getElementById("scan"), body = document.getElementById("scan-body");
   btn.addEventListener("click", () => startJob("scans/latest", "SCAN", btn, body));
   watchDoc("scans/latest", (d, err) => {
     if (location.hash.slice(1) !== "trading") return;
-    if (err === "nodb") { body.innerHTML = `<p class="tiny">Open this page on claude.ai (signed in) to run scans.</p>`; return; }
-    if (!d) { body.innerHTML = `<p class="tiny">No scan yet. Press “Scan F&O now”.</p>`; return; }
-    const busy = d.status === "queued" || d.status === "working"; btn.disabled = busy; btn.textContent = busy ? "Scanning…" : "Scan again";
+    if (err === "nodb") { body.innerHTML = `<p class="tiny">Open this page on claude.ai (signed in) to run it.</p>`; return; }
+    if (!d) { body.innerHTML = `<p class="tiny">Not run yet. Press “Check the market now”.</p>`; return; }
+    const busy = d.status === "queued" || d.status === "working"; btn.disabled = busy; btn.textContent = busy ? "Working…" : "Check again";
     let h = busy ? `<p class="steps"><span class="spinner"></span>${esc(d.step || "Working…")}</p>` : "";
-    if (d.status === "failed") h += `<p class="notice">The scan stopped: ${esc(d.error || "unknown error")}</p>`;
+    if (d.status === "failed") h += `<p class="notice">It stopped: ${esc(d.error || "unknown error")}</p>`;
     const sc = d.scan;
-    if (sc) {
-      h += `<p class="small">Scanned ${sc.scanned} stocks ${ago(sc.generated_at)}. ${d.commentary ? esc(d.commentary) : ""}</p>`;
-      h += sc.ideas.map((x) => `<div><div class="name" style="margin:6px 0 4px"><a href="#stock-${esc(x.isin)}">${esc(x.symbol)}</a> ₹${price(x.price)} <span class="tiny">RSI ${x.rsi ?? NA} · strength ${Math.abs(x.idea.score)}</span></div>${setupBlock(x.idea)}
-        ${(x.headlines || []).length ? `<p class="tiny">News: ${x.headlines.map((n) => `<span class="pill ${esc(n.sentiment)}">${esc(n.sentiment)}</span> ${esc(n.title)}`).join(" · ")}</p>` : ""}</div>`).join("") || `<p>No stocks where the signals clearly agree right now.</p>`;
-      h += `<details class="sec"><summary>All F&O stocks by chart signal</summary><div class="scroll"><table><thead><tr><th>Stock</th><th class="num">Price</th><th>Bias</th><th class="num">Score</th><th class="num">RSI</th></tr></thead><tbody>${sc.overview.map((x) => `<tr><td><a href="#stock-${esc(x.isin)}">${esc(x.symbol)}</a></td><td class="num">${price(x.price)}</td><td><span class="pill ${x.bias === "bullish" ? "good" : x.bias === "bearish" ? "bad" : "na"}">${esc(x.bias)}</span></td><td class="num">${x.score}</td><td class="num">${x.rsi ?? NA}</td></tr>`).join("")}</tbody></table></div></details>
+    if (d.commentary) h += `<div class="idea"><div class="name">Claude's overview</div><p style="white-space:pre-wrap;margin:4px 0 0">${esc(d.commentary)}</p></div>`;
+    if (sc && sc.notable) {
+      h += `<p class="small">${sc.scanned} stocks checked ${ago(sc.generated_at)} · ${sc.breadth.up} up, ${sc.breadth.down} down.</p>`;
+      h += sc.notable.map((x) => `<div class="idea" style="margin-top:8px"><div class="name"><a href="#stock-${esc(x.isin)}">${esc(x.symbol)}</a> ₹${price(x.price)} <span class="${cls(x.change_pct)}">${pct(x.change_pct)}</span></div>
+        <ul class="small">${x.flags.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>
+        <p class="tiny">IV ${x.iv ?? NA}% · expected move to expiry ±${x.expected_move_pct ?? NA}% · put/call OI ${x.pcr ?? NA}</p>
+        ${(x.headlines || []).length ? `<p class="tiny">News: ${x.headlines.map((n) => { const u = safeUrl(n.link); return u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(n.title)}</a>` : esc(n.title); }).join(" · ")}</p>` : ""}</div>`).join("");
+      h += `<details class="sec"><summary>All F&O stocks</summary><div class="scroll"><table><thead><tr><th>Stock</th><th class="num">Price</th><th class="num">Change</th><th class="num">Volume vs normal</th><th class="num">IV</th><th class="num">Expected move</th></tr></thead><tbody>${sc.overview.map((x) => `<tr><td><a href="#stock-${esc(x.isin)}">${esc(x.symbol)}</a></td><td class="num">${price(x.price)}</td><td class="num ${cls(x.change_pct)}">${pct(x.change_pct)}</td><td class="num">${x.volume_ratio ?? NA}×</td><td class="num">${x.iv ?? NA}%</td><td class="num">±${x.expected_move_pct ?? NA}%</td></tr>`).join("")}</tbody></table></div></details>
         <p class="tiny" style="font-weight:600">${esc(sc.label)}</p>`;
     }
     body.innerHTML = h;

@@ -126,14 +126,14 @@ def magic_formula(industry: str, kr: dict, peers: list[dict]) -> dict:
 
 def rating(parts: dict) -> dict:
     """Weighted 0-100 score from the numeric parts; research can move it by at most ±10."""
-    weights = {"business_quality": 30, "valuation": 20, "graham": 15, "magic_formula": 15, "economy": 10, "price_trend": 10}
+    weights = {"business_quality": 35, "valuation": 25, "graham": 15, "magic_formula": 15, "economy": 10}
     have = {k: v for k, v in parts.items() if v.get("score") is not None}
     total = sum(weights[k] for k in have)
     score = round(sum(weights[k] * have[k]["score"] for k in have) / total * 100) if total else None
     grade = None if score is None else "A" if score >= 75 else "B" if score >= 60 else "C" if score >= 45 else "D" if score >= 30 else "E"
     words = {"A": "Strong", "B": "Good", "C": "Average", "D": "Weak", "E": "Poor"}
     return {"score": score, "grade": grade, "label": words.get(grade), "weights": weights, "parts": parts,
-            "note": "Numbers-only score. The research step may adjust it by up to 10 points for management quality and capital allocation."}
+            "note": "Scorecard from the numbers (business quality, valuation, Graham, Magic Formula, economy). The final rating is Claude's judgement of the whole picture, which may move it by up to 15 points with reasons."}
 
 
 def main() -> None:
@@ -178,8 +178,6 @@ def main() -> None:
         "magic_formula": {"score": (1 - (mf["peer_rank"] - 1) / max(mf["peer_count"] - 1, 1)) if mf.get("available") else None,
                           "note": f"rank {mf['peer_rank']} of {mf['peer_count']} vs competitors" if mf.get("available") else mf.get("reason", "")},
         "economy": {"score": m["score"]["share_tailwinds"], "note": f"{m['score']['tailwinds']} of {m['score']['judged']} drivers are tailwinds"},
-        "price_trend": {"score": clamp(0.5 + (st.get("return_1y") or 0) / 100, 0, 1) if st.get("available") and st.get("return_1y") is not None else None,
-                        "note": f"{st.get('return_1y')}% over 1 year" if st.get("available") else "not available"},
     }
 
     # Technicals, options, commodity links and a trade idea
@@ -193,8 +191,7 @@ def main() -> None:
     nifty = upstox_candles._fetch("NSE_INDEX|Nifty 50", jobs.today_ist(), None)
     links = correlations.analyse(candles, nifty, jobs.today_ist())
     rate = rating(parts)
-    idea = derivatives.trade_idea(primary.symbol, fno["lot_size"], tech, chain, derivatives.news_score(page["news"]["items"]),
-                                  rate["grade"], m["score"]["share_tailwinds"]) if fno else None
+    pos = derivatives.positioning(primary.symbol, fno["lot_size"] if fno else None, tech, chain, jobs.today_ist())
     chain_out = {k: v for k, v in chain.items() if k != "rows"}
     if chain.get("available"):  # strikes near the money, for display
         near = sorted(chain["rows"], key=lambda r: abs(r["strike"] - chain["spot"]))[:12]
@@ -209,7 +206,7 @@ def main() -> None:
         "fno": {"has_fno": bool(fno), "lot_size": fno["lot_size"] if fno else None,
                 "expiries": fno["expiries"][:3] if fno else []},
         "option_chain": chain_out,
-        "trade_idea": idea,
+        "positioning": pos,
         "links": links,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "isin": isin, "symbol": primary.symbol, "name": primary.name,
