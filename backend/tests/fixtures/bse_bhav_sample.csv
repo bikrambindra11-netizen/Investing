@@ -1,0 +1,3 @@
+TradDt,BizDt,Sgmt,Src,FinInstrmTp,FinInstrmId,ISIN,TckrSymb,SctySrs,XpryDt,FininstrmActlXpryDt,StrkPric,OptnTp,FinInstrmNm,OpnPric,HghPric,LwPric,ClsPric,LastPric,PrvsClsgPric,UndrlygPric,SttlmPric,OpnIntrst,ChngInOpnIntrst,TtlTradgVol,TtlTrfVal,TtlNbOfTxsExctd,SsnId,NewBrdLotQty,Rmks,Rsvd1,Rsvd2,Rsvd3,Rsvd4
+2026-11-23,2026-11-23,CM,BSE,STK,500325,INE002A01018,RELIANCE,A,,,,,RELIANCE INDUSTRIES LTD.,1377.60,1389.95,1347.50,1352.50,1352.50,1375.10,,1351.00,,,558137,761512213.00,13235,F1,1,,,,,
+2026-11-23,2026-11-23,CM,BSE,STK,514028,INE376L01013,RAJKSYN,X,,,,,RAJKAMAL SYNTHETICS LTD.,16.00,17.59,16.00,17.13,17.33,18.00,,17.13,,,288,4849.00,17,F1,1,,,,,

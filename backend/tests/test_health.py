@@ -10,4 +10,4 @@ def test_health():
     body = r.json()
     assert body["status"] == "ok"
     assert body["database"] == "connected"
-    assert set(body["keys_configured"]) == {"upstox_api_key", "upstox_access_token", "fred_api_key"}
+    assert set(body["keys_configured"]) == {"upstox_api_key", "upstox_api_secret", "fred_api_key"}
