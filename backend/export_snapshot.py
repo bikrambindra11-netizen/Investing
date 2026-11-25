@@ -1,4 +1,4 @@
-"""Export a read-only snapshot of the portal as JSON files for the hosted web page.
+"""Build the hosted web page (OUT_DIR/index.html) with all its data embedded.
 
 Usage: python -m backend.export_snapshot OUT_DIR [--charts N] [--news N]
 Run after the data jobs have refreshed the database.
@@ -18,12 +18,7 @@ from backend.app.stock import company_news, industry_news
 from backend.sources import nse_sectors, upstox_candles
 
 
-CHART_CHUNKS = 8
-
-
-def chart_chunk(isin: str) -> int:
-    """Same rule as the web page: sum of character codes mod CHART_CHUNKS."""
-    return sum(map(ord, isin)) % CHART_CHUNKS
+TEMPLATE = Path(__file__).resolve().parents[1] / "site" / "template.html"
 
 
 def slug(industry_id: str) -> str:
@@ -122,16 +117,26 @@ def main() -> None:
 
     meta = {"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "prices_as_of": as_of,
             "counts": {"stocks": len(stocks), "charts": len(charts), "news": len(news)}}
-    # Charts split into chunks so a stock page downloads only one small file.
-    for k in range(CHART_CHUNKS):
-        part = {i: v for i, v in charts.items() if chart_chunk(i) == k}
-        (out / f"charts-{k}.json").write_text(json.dumps(part, separators=(",", ":")))
-    files = {"stocks.json": stocks, "indices.json": indices, "industries.json": industries,
-             "economy.json": macro.all_indicators(), "stats.json": stats,
-             "news.json": news, "meta.json": meta}
-    for name, data in files.items():
-        (out / name).write_text(json.dumps(data, separators=(",", ":"), default=str))
-        print(f"{name}: {(out / name).stat().st_size / 1e6:.2f} MB")
+    # Charts on one shared date axis (weekly for older years, daily for the last year) to keep the page small.
+    dates = sorted({d for v in charts.values() for d, _ in v})
+    cutoff = dates[-1][:4] and str(int(dates[-1][:4]) - 1) + dates[-1][4:] if dates else ""
+    axis = [d for i, d in enumerate(dates) if d >= cutoff or i % 5 == 0]
+    series = {}
+    for isin, pts in charts.items():
+        m, last, row = dict(pts), None, []
+        for d in axis:
+            if d in m:
+                last = m[d]
+            row.append(last)
+        series[isin] = row
+
+    data = {"stocks": stocks, "indices": indices, "industries": industries, "economy": macro.all_indicators(),
+            "stats": stats, "news": {k: v[:6] for k, v in news.items()}, "meta": meta,
+            "charts": {"dates": axis, "series": series}}
+    blob = json.dumps(data, separators=(",", ":"), default=str).replace("<", "\\u003c")
+    page = TEMPLATE.read_text().replace("__PORTAL_DATA__", blob)
+    (out / "index.html").write_text(page)
+    print(f"index.html: {(out / 'index.html').stat().st_size / 1e6:.2f} MB with data embedded")
 
 
 if __name__ == "__main__":

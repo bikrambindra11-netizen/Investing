@@ -1,0 +1,380 @@
+<title>Stock Picker Portal</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: a market terminal — sticky top bar, one content column, dense tables with tabular figures */
+:root {
+  --bg: #f6f7f5; --panel: #ffffff; --ink: #14201c; --muted: #5d6b66; --line: #dde3e0;
+  --accent: #0d5c4a; --accent-ink: #ffffff; --soft: #eef2f0;
+  --up: #12733f; --up-bg: #e2f3e8; --down: #b42318; --down-bg: #fbe7e5; --warn-bg: #fdf3dc; --warn: #8a5a00;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1513; --panel: #161e1b; --ink: #e6ede9; --muted: #95a49e; --line: #2a3531;
+  --accent: #4fc3a1; --accent-ink: #062a21; --soft: #1d2723;
+  --up: #5bd08a; --up-bg: #163324; --down: #ff8a80; --down-bg: #3a1d1b; --warn-bg: #3a2f14; --warn: #f2c66d; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f1513; --panel: #161e1b; --ink: #e6ede9; --muted: #95a49e; --line: #2a3531;
+  --accent: #4fc3a1; --accent-ink: #062a21; --soft: #1d2723;
+  --up: #5bd08a; --up-bg: #163324; --down: #ff8a80; --down-bg: #3a1d1b; --warn-bg: #3a2f14; --warn: #f2c66d; color-scheme: dark }
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--sans); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--panel) }
+a { color: var(--accent) }
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+.wrap { max-width: 1120px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)) }
+header.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--panel); border-bottom: 1px solid var(--line) }
+header.top .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px; padding-block: 10px }
+.brand { font-weight: 700; color: var(--ink); text-decoration: none; letter-spacing: -0.01em }
+nav.tabs { display: flex; gap: 14px; flex-wrap: wrap }
+nav.tabs a { color: var(--muted); text-decoration: none; font-weight: 500 }
+nav.tabs a[aria-current="page"] { color: var(--ink); text-decoration: underline; text-underline-offset: 6px; text-decoration-thickness: 2px; text-decoration-color: var(--accent) }
+.fresh { margin-left: auto; font-size: 12px; color: var(--muted) }
+main { padding-block: 18px 40px; display: grid; gap: 14px }
+h1 { font-size: 22px; line-height: 1.25; margin: 0; text-wrap: balance }
+h2 { font-size: 15px; margin: 0 0 2px; }
+.sub { color: var(--muted); font-size: 12px; margin: 0 }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px; min-width: 0 }
+.grid { display: grid; gap: 8px }
+.tiles { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) }
+.tile { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; min-width: 0 }
+.tile .lbl { font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; gap: 6px }
+.tile .val { font: 500 17px/1.3 var(--mono) }
+.num, td.num, th.num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap }
+.up { color: var(--up) } .down { color: var(--down) } .flat { color: var(--muted) }
+.small { font-size: 12px } .tiny { font-size: 11px; color: var(--muted) }
+.src { font-size: 11px; color: var(--muted); margin: 8px 0 0 }
+.scroll { overflow-x: auto }
+table { width: 100%; border-collapse: collapse }
+th { font-size: 12px; font-weight: 500; color: var(--muted); text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap }
+td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top }
+tr:last-child td { border-bottom: 0 }
+th button { all: unset; cursor: pointer } th button:hover { color: var(--ink) }
+.name { font-weight: 600 } .name a { color: var(--ink); text-decoration: none } .name a:hover { text-decoration: underline }
+.co { font-size: 12px; color: var(--muted); max-width: 22rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.ex { font-size: 10px; color: var(--muted); margin-left: 4px; font-weight: 400 }
+.pill { display: inline-block; font-size: 11px; font-weight: 600; border-radius: 99px; padding: 1px 8px; white-space: nowrap }
+.pill.tailwind, .pill.positive, .pill.good { background: var(--up-bg); color: var(--up) }
+.pill.headwind, .pill.negative, .pill.bad { background: var(--down-bg); color: var(--down) }
+.pill.neutral, .pill.na { background: var(--soft); color: var(--muted) }
+.live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--up); margin-right: 4px; vertical-align: 1px }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px }
+input[type=search], select { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px }
+input[type=search] { flex: 1 1 240px; min-width: 0 }
+.btn { font: inherit; font-weight: 500; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 6px; padding: 5px 12px; cursor: pointer }
+.btn[disabled] { opacity: .4; cursor: default }
+.btn.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent) }
+.pager { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; gap: 8px }
+.two { display: grid; gap: 14px; grid-template-columns: 1fr 1fr } @media (max-width: 760px) { .two { grid-template-columns: 1fr } }
+.movers li { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0 } .movers ol { margin: 0; padding: 0; list-style: none }
+.verdict { border: 2px solid var(--line); background: var(--panel); border-radius: 8px; padding: 16px }
+.verdict.positive { border-color: var(--up) } .verdict.negative { border-color: var(--down) }
+.verdict .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted) }
+.verdict p.big { font-size: 17px; font-weight: 600; margin: 4px 0 8px; text-wrap: balance }
+.verdict ul { margin: 0; padding-left: 20px } .verdict li { margin: 2px 0 }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px } .chip { font-size: 12px; background: var(--soft); border-radius: 4px; padding: 3px 8px }
+.stats { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)) }
+.stat { background: var(--soft); border-radius: 6px; padding: 8px 10px } .stat .k { font-size: 11px; color: var(--muted) } .stat .v { font: 500 14px var(--mono) }
+.levels { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); margin: 0; padding: 0; list-style: none }
+.levels li { background: var(--soft); border-radius: 6px; padding: 8px 10px }
+.notice { background: var(--warn-bg); color: var(--warn); border-radius: 6px; padding: 10px 12px; font-size: 13px }
+.ranges { display: flex; gap: 4px; margin-bottom: 8px; flex-wrap: wrap }
+.chart svg { display: block; width: 100%; height: auto }
+.news li { display: flex; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line) } .news li:last-child { border: 0 } .news ul { list-style: none; margin: 0; padding: 0 }
+.cards { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)) }
+.card { display: block; text-decoration: none; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px }
+.card:hover { border-color: var(--accent) }
+.bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--soft); margin-top: 8px }
+.bar span { display: block } .bar .t { background: var(--up) } .bar .h { background: var(--down) }
+.loading { color: var(--muted) }
+footer { font-size: 12px; color: var(--muted); padding-block: 0 30px }
+@media (prefers-reduced-motion: no-preference) { .tile, .card { transition: border-color .15s } }
+</style>
+
+<header class="top"><div class="wrap">
+  <a class="brand" href="#market">Stock Picker Portal</a>
+  <nav class="tabs" aria-label="Sections">
+    <a href="#market" data-tab="market">Market</a>
+    <a href="#industries" data-tab="industries">Industries</a>
+    <a href="#economy" data-tab="economy">Economy</a>
+  </nav>
+  <span class="fresh" id="fresh">Loading data…</span>
+</div></header>
+
+<main class="wrap" id="app"><p class="loading">Loading the market…</p></main>
+<footer class="wrap">Personal screening tool. Not investment advice. Prices: NSE/BSE close files and Upstox minute prices; economy: MoSPI, RBI, FRED; news: Google News.</footer>
+
+<script id="portal-data" type="application/json">__PORTAL_DATA__</script>
+<script>
+"use strict";
+const S = { stocks: null, byIsin: {}, indices: [], industries: {}, economy: [], meta: {}, stats: null, news: null, charts: {} };
+const view = { q: "", ex: "all", sort: "t", desc: true, page: 0, range: 366 };
+const PAGE = 50;
+
+// ---------- helpers
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const NA = "not available";
+const inr = new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const int = new Intl.NumberFormat("en-IN");
+const price = (v) => (v == null ? NA : inr.format(v));
+const cr = (v) => (v == null ? NA : inr.format(v / 1e7));
+const vol = (v) => (v == null ? NA : int.format(v));
+const pct = (v) => (v == null ? NA : `${v > 0 ? "+" : ""}${Number(v).toFixed(2)}%`);
+const cls = (v) => (v == null ? "flat" : v > 0 ? "up" : v < 0 ? "down" : "flat");
+function when(v) {
+  if (!v) return NA;
+  const d = new Date(v.length === 10 ? v + "T00:00:00" : v);
+  if (isNaN(d)) return esc(v);
+  const date = d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  return v.length === 10 ? date : `${date}, ${d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST`;
+}
+const safeUrl = (u) => (typeof u === "string" && u.startsWith("https://") ? u : null);
+
+// Current price for a stock: today's minute price when trading, else the exchange close
+function cur(s) { return s.lp != null ? { p: s.lp, ch: s.lch, at: s.lt, live: true, src: "Upstox minute prices" } : { p: s.c, ch: s.ch, at: s.d, live: false, src: s.src }; }
+
+function spark(points, w = 96, h = 26) {
+  if (!points || points.length < 2) return `<span class="tiny">—</span>`;
+  const v = points.map((p) => p[1]), lo = Math.min(...v), hi = Math.max(...v), span = hi - lo || 1;
+  const xy = v.map((y, i) => [(i / (v.length - 1)) * (w - 4) + 2, h - 3 - ((y - lo) / span) * (h - 6)]);
+  const d = xy.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join("");
+  const [ex, ey] = xy[xy.length - 1];
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="trend"><path d="${d}" fill="none" stroke="var(--muted)" stroke-width="1.5"/><circle cx="${ex.toFixed(1)}" cy="${ey.toFixed(1)}" r="2.2" fill="var(--accent)"/></svg>`;
+}
+
+// ---------- routing
+const routes = { market: renderMarket, industries: renderIndustries, economy: renderEconomy };
+function route() {
+  const h = location.hash.slice(1) || "market";
+  document.querySelectorAll("nav.tabs a").forEach((a) => a.toggleAttribute("aria-current", false));
+  const tab = h.startsWith("stock-") ? "market" : h.startsWith("industry-") ? "industries" : h;
+  const cur = document.querySelector(`nav.tabs a[data-tab="${tab}"]`); if (cur) cur.setAttribute("aria-current", "page");
+  if (!S.stocks) return;
+  if (h.startsWith("stock-")) renderStock(h.slice(6));
+  else if (h.startsWith("industry-")) renderIndustry(h.slice(9));
+  else (routes[h] || renderMarket)();
+  if (!h.startsWith("market") || view.page === 0) window.scrollTo(0, 0);
+}
+window.addEventListener("hashchange", route);
+const app = () => document.getElementById("app");
+
+// ---------- market
+function renderMarket() {
+  const rows = S.stocks;
+  const tiles = S.indices.map((t) => `
+    <div class="tile"><div class="lbl"><span>${esc(t.label)}</span>${t.date && t.date.length > 10 ? '<span class="live-dot" title="today\'s price"></span>' : ""}</div>
+    <div class="val">${price(t.close)}</div><div class="small ${cls(t.change_pct)}">${pct(t.change_pct)}</div>
+    <div class="tiny">${when(t.date)}</div></div>`).join("");
+  const liquid = rows.filter((s) => (s.t || 0) >= 1e7 && cur(s).ch != null).sort((a, b) => cur(b).ch - cur(a).ch);
+  const mv = (list) => list.map((s) => `<li><span><span class="name"><a href="#stock-${esc(s.i)}">${esc(s.s)}</a></span> <span class="tiny">₹${cr(s.t)} Cr</span></span><span class="num">${price(cur(s).p)} <span class="${cls(cur(s).ch)}">${pct(cur(s).ch)}</span></span></li>`).join("");
+  app().innerHTML = `
+    <div class="grid tiles">${tiles}</div>
+    <div class="two">
+      <section class="panel movers"><h2>Top gainers</h2><ol>${mv(liquid.slice(0, 5))}</ol></section>
+      <section class="panel movers"><h2>Top losers</h2><ol>${mv(liquid.slice(-5).reverse())}</ol></section>
+    </div>
+    <p class="tiny" style="margin:-6px 0 0">Gainers and losers: stocks with at least ₹1 crore traded in the last full session.</p>
+    <section class="panel">
+      <div class="controls">
+        <input type="search" id="q" placeholder="Search by company, symbol or ISIN" value="${esc(view.q)}" aria-label="Search stocks">
+        <select id="ex" aria-label="Exchange">
+          <option value="all">NSE + BSE</option><option value="nse">Listed on NSE</option><option value="bse">BSE only</option>
+        </select>
+        <span class="tiny" id="count"></span>
+      </div>
+      <div class="scroll"><table><thead><tr>
+        <th><button data-k="s">Stock</button></th><th class="num"><button data-k="p">Price (₹)</button></th>
+        <th class="num"><button data-k="ch">Change</button></th><th class="num"><button data-k="v">Volume*</button></th>
+        <th class="num"><button data-k="t">Traded ₹ Cr*</button></th><th>As of</th></tr></thead><tbody id="tb"></tbody></table></div>
+      <div class="pager"><button class="btn" id="prev">Previous</button><span class="tiny" id="pg"></span><button class="btn" id="next">Next</button></div>
+      <p class="src">* Volume and value traded are from the last full session. Click a stock for its full analysis.</p>
+    </section>`;
+  document.getElementById("ex").value = view.ex;
+  document.getElementById("q").addEventListener("input", (e) => { view.q = e.target.value; view.page = 0; drawTable(); });
+  document.getElementById("ex").addEventListener("change", (e) => { view.ex = e.target.value; view.page = 0; drawTable(); });
+  document.querySelectorAll("th button").forEach((b) => b.addEventListener("click", () => {
+    const k = b.dataset.k; view.desc = view.sort === k ? !view.desc : k !== "s"; view.sort = k; view.page = 0; drawTable();
+  }));
+  document.getElementById("prev").addEventListener("click", () => { view.page--; drawTable(); });
+  document.getElementById("next").addEventListener("click", () => { view.page++; drawTable(); });
+  drawTable();
+}
+function drawTable() {
+  const q = view.q.trim().toLowerCase();
+  let rows = S.stocks;
+  if (view.ex === "nse") rows = rows.filter((s) => s.x.includes("NSE"));
+  if (view.ex === "bse") rows = rows.filter((s) => !s.x.includes("NSE"));
+  if (q) rows = rows.filter((s) => s.s.toLowerCase().includes(q) || s.n.toLowerCase().includes(q) || s.i.toLowerCase() === q);
+  const key = { s: (s) => s.s, p: (s) => cur(s).p, ch: (s) => cur(s).ch, v: (s) => s.v, t: (s) => s.t }[view.sort];
+  const dir = view.desc ? -1 : 1;
+  rows = [...rows].sort((a, b) => {
+    const x = key(a), y = key(b);
+    if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1;
+    return (typeof x === "string" ? x.localeCompare(y) : x - y) * dir;
+  });
+  const pages = Math.max(1, Math.ceil(rows.length / PAGE)); view.page = Math.min(Math.max(view.page, 0), pages - 1);
+  const shown = rows.slice(view.page * PAGE, view.page * PAGE + PAGE);
+  document.getElementById("tb").innerHTML = shown.map((s) => { const c = cur(s); return `<tr>
+    <td><div class="name"><a href="#stock-${esc(s.i)}">${esc(s.s)}</a><span class="ex">${esc(s.x.join(" · "))}</span></div><div class="co">${esc(s.n)}</div></td>
+    <td class="num">${price(c.p)}</td><td class="num ${cls(c.ch)}">${pct(c.ch)}</td><td class="num">${vol(s.v)}</td><td class="num">${cr(s.t)}</td>
+    <td class="tiny" title="Source: ${esc(c.src || NA)}">${c.live ? '<span class="live-dot"></span>' : ""}${when(c.at)}</td></tr>`; }).join("")
+    || `<tr><td colspan="6" class="tiny">No stocks match.</td></tr>`;
+  document.getElementById("count").textContent = `${int.format(rows.length)} stocks`;
+  document.getElementById("pg").textContent = `Page ${view.page + 1} of ${pages}`;
+  document.getElementById("prev").disabled = view.page === 0;
+  document.getElementById("next").disabled = view.page >= pages - 1;
+}
+
+// ---------- economy panel (shared)
+function macroPanel(m, title) {
+  const s = m.score;
+  const rows = m.drivers.map((d) => `<tr>
+    <td><div class="name">${esc(d.label)}</div><div class="small">${esc(d.why || "")}</div><div class="tiny">Helps when ${esc(d.good_when || "")}. Source: ${esc(d.source)}</div></td>
+    <td class="num">${esc(d.latest_text || NA)}<div class="tiny">${d.latest_date ? when(d.latest_date) : ""}</div></td>
+    <td>${spark(d.trend)}<div class="tiny">${esc(d.change_text || "")}</div></td>
+    <td><span class="pill ${esc(d.verdict === "not available" ? "na" : d.verdict)}">${esc(d.verdict)}</span><div class="tiny">${esc(d.summary || "")}</div></td></tr>`).join("");
+  return `<section class="panel"><h2>${esc(title)}</h2>
+    <p class="sub">${s.tailwinds} tailwind${s.tailwinds === 1 ? "" : "s"}, ${s.headwinds} headwind${s.headwinds === 1 ? "" : "s"}, ${s.judged - s.tailwinds - s.headwinds} neutral, out of ${s.judged} drivers</p>
+    <div class="scroll"><table style="min-width:640px"><thead><tr><th>Driver</th><th class="num">Latest</th><th>Last 12 months</th><th>Verdict</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${m.not_tracked && m.not_tracked.length ? `<p class="src">Also matters, no free data: ${esc(m.not_tracked.join("; "))}.</p>` : ""}</section>`;
+}
+function newsPanel(items, title) {
+  const li = (items || []).map((n) => { const u = safeUrl(n.link); return `<li><span class="pill ${esc(n.sentiment)}">${esc(n.sentiment)}</span><div>${u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(n.title)}</a>` : esc(n.title)}<div class="tiny">${esc(n.publisher || "")} · ${when(n.published)}</div></div></li>`; }).join("");
+  return `<section class="panel news"><h2>${esc(title)}</h2><p class="sub">Tagged by simple word rules. Read the article before acting on it.</p>
+    ${li ? `<ul>${li}</ul>` : `<p class="small">News for this company is not in the current update (news is collected for the 250 most traded stocks).</p>`}<p class="src">Source: Google News</p></section>`;
+}
+function peersTable(list, highlight) {
+  return `<div class="scroll"><table style="min-width:560px"><thead><tr><th>Company</th><th class="num">Price (₹)</th><th class="num">Change</th><th class="num">Traded ₹ Cr</th><th>Sector</th></tr></thead><tbody>${
+    list.map((s) => { const c = cur(s); return `<tr${s.i === highlight ? ' style="background:var(--soft)"' : ""}><td><div class="name"><a href="#stock-${esc(s.i)}">${esc(s.s)}</a>${s.i === highlight ? '<span class="ex">this stock</span>' : ""}</div><div class="co">${esc(s.n)}</div></td>
+    <td class="num">${price(c.p)}</td><td class="num ${cls(c.ch)}">${pct(c.ch)}</td><td class="num">${cr(s.t)}</td><td class="small">${esc(s.sec || NA)}</td></tr>`; }).join("")}</tbody></table></div>`;
+}
+
+// ---------- stock page
+async function renderStock(isin) {
+  const s = S.byIsin[isin];
+  if (!s) { app().innerHTML = `<section class="panel">That stock was not found. <a href="#market">Back to the market</a>.</section>`; return; }
+  const c = cur(s), st = (S.stats || {})[isin], ind = S.industries[s.ind] || S.industries.general, m = ind;
+  const vals = (S.charts.series || {})[isin];
+  const series = vals ? S.charts.dates.map((d, i) => [d, vals[i]]).filter((x) => x[1] != null) : null;
+  const peers = S.stocks.filter((x) => x.ind === s.ind && x.i !== isin && (!s.sec || x.sec === s.sec || s.ind === "banks" || s.ind === "nbfc")).slice(0, 10);
+
+  // Summary (economy + price; company financials need the Upstox login, which a hosted page cannot hold)
+  const share = m.score.share_tailwinds;
+  const mood = share == null ? "unknown" : share >= 0.5 ? "supportive" : share >= 0.25 ? "mixed" : "unfavourable";
+  const tone = share == null ? "" : share >= 0.5 ? "positive" : share < 0.25 ? "negative" : "";
+  const reasons = [
+    `Economy: ${m.score.tailwinds} of ${m.score.judged} drivers for ${m.label} are tailwinds and ${m.score.headwinds} are headwinds.`,
+    ...m.drivers.filter((d) => d.verdict !== "neutral").slice(0, 2).map((d) => `${d.label}: ${d.latest_text} (${d.change_text || d.summary}) — ${d.verdict}.`),
+  ];
+  if (st && st.available) {
+    if (st.return_1y != null) reasons.push(`Share price ${pct(st.return_1y)} over 1 year and ${pct(st.from_high_pct)} from its 52-week high.`);
+    if (st.cagr_5y != null) reasons.push(`Over 5 years the share has grown ${pct(st.cagr_5y)} a year.`);
+  }
+  const risks = [];
+  m.drivers.filter((d) => d.verdict === "headwind").slice(0, 3).forEach((d) => risks.push(`${d.label} is working against this industry (${d.change_text || d.summary}).`));
+  if (st && st.from_high_pct != null && st.from_high_pct <= -30) risks.push(`The share is ${Math.abs(st.from_high_pct)}% below its 52-week high; find out why before buying.`);
+  if (st && st.avg_volume_3m != null && st.avg_volume_3m < 10000) risks.push("Thinly traded: it may be hard to buy or sell without moving the price.");
+  if (!s.t || s.t < 1e7) risks.push("Less than ₹1 crore traded in the last session: a small, illiquid stock.");
+
+  const lv = [["Macro-economic sector", s.ms, "NSE classification"], ["Sector", s.sec, "NSE index lists"], ["Industry", ind.label, "Portal industry map"], ["Basic industry", null, "needs Upstox login"]];
+  const statBox = (k, v) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+  app().innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;align-items:flex-end">
+      <div><h1>${esc(s.n)}</h1><p class="sub">${esc(s.x.map((e) => `${e}`).join(" · "))}: ${esc(s.s)} · ISIN ${esc(s.i)}</p></div>
+      <div style="text-align:right"><div class="num" style="font-size:24px;font-weight:500">₹${price(c.p)}</div>
+        <div class="num ${cls(c.ch)}">${pct(c.ch)}</div>
+        <div class="tiny">${c.live ? '<span class="live-dot"></span>' : ""}${esc(c.src || NA)} · ${when(c.at)}</div></div>
+    </div>
+    <section class="verdict ${tone}"><div class="eyebrow">Summary</div>
+      <p class="big">${esc(s.n)}: the economic backdrop for ${esc(m.label.toLowerCase())} is ${mood}.</p>
+      <ul>${reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>
+      <div class="chips"><span class="chip">Economy: ${share == null ? NA : Math.round(share * 100) + "% tailwinds"}</span><span class="chip">Company financials: need Upstox login</span><span class="chip">1-year price: ${st && st.return_1y != null ? pct(st.return_1y) : NA}</span></div>
+      <p class="tiny" style="margin:10px 0 0;font-weight:600">Screening output only. Not investment advice.</p></section>
+    <section class="panel"><h2>Price</h2>
+      ${series ? `<div class="ranges" id="ranges">${[["1M", 31], ["6M", 183], ["1Y", 366], ["3Y", 1096], ["5Y", 1827]].map(([l, d]) => `<button class="btn ${view.range === d ? "on" : ""}" data-d="${d}">${l}</button>`).join("")}</div><div class="chart" id="chart"></div>` : `<p class="small">Price chart is kept for the 800 most traded stocks; not available for this one.</p>`}
+      ${st && st.available ? `<div class="grid stats" style="margin-top:10px">${statBox("52-week high", "₹" + price(st.high_52w))}${statBox("52-week low", "₹" + price(st.low_52w))}${statBox("From 52-week high", pct(st.from_high_pct))}${statBox("Avg daily volume (3 mo)", vol(st.avg_volume_3m))}${statBox("1 month", pct(st.return_1m))}${statBox("6 months", pct(st.return_6m))}${statBox("1 year", pct(st.return_1y))}${statBox("5 years, a year", pct(st.cagr_5y))}</div>` : ""}
+      <p class="src">Source: Upstox historical prices${st && st.as_of ? ` · daily closes up to ${when(st.as_of)}` : ""}. Last session: volume ${vol(s.v)}, traded ₹${cr(s.t)} Cr (${esc(s.src || NA)}, ${when(s.d)}).</p></section>
+    <section class="panel"><h2>Industry (detected automatically)</h2>
+      <ol class="levels">${lv.map(([k, v, src], i) => `<li><div class="tiny">${i + 1}. ${k}</div><div class="name">${esc(v || NA)}</div><div class="tiny">${esc(src)}</div></li>`).join("")}</ol>
+      <p class="small" style="margin:10px 0 0"><a href="#industry-${esc(ind.id)}">Open the ${esc(ind.label)} industry page →</a></p></section>
+    ${macroPanel(m, `Economy check: ${m.label}`)}
+    <section class="panel"><h2>Competitors</h2><p class="sub">Same industry and sector, most traded first.</p>${peersTable([s, ...peers], isin)}</section>
+    <section class="panel"><h2>Key risks</h2>${risks.length ? `<ul>${risks.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : `<p class="small">No specific red flags in the available data.</p>`}</section>
+    <section class="panel"><h2>Company financials</h2>
+      <div class="notice">Financial statements, ratios (P/E, ROE, ROCE), shareholding, Graham's checks and valuation come from Upstox and need a personal Upstox login, which this hosted page cannot hold. They appear in the version of the portal you run on your own computer.</div></section>
+    ${newsPanel((S.news || {})[isin], "News")}`;
+  if (series) {
+    drawChart(series);
+    document.querySelectorAll("#ranges .btn").forEach((b) => b.addEventListener("click", () => {
+      view.range = +b.dataset.d; document.querySelectorAll("#ranges .btn").forEach((x) => x.classList.toggle("on", x === b)); drawChart(series);
+    }));
+  }
+}
+function drawChart(series) {
+  const pts = series.map(([d, v]) => [new Date(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8)), v]);
+  const last = pts[pts.length - 1][0], from = new Date(last - view.range * 864e5);
+  const p = pts.filter((x) => x[0] >= from); if (p.length < 2) { document.getElementById("chart").innerHTML = `<p class="small">Not enough history.</p>`; return; }
+  const W = 760, H = 260, L = 8, R = 64, T = 10, B = 26;
+  const vals = p.map((x) => x[1]), lo = Math.min(...vals), hi = Math.max(...vals), pad = (hi - lo) * 0.06 || 1;
+  const y0 = lo - pad, y1 = hi + pad, t0 = p[0][0], t1 = p[p.length - 1][0];
+  const X = (t) => L + ((t - t0) / (t1 - t0 || 1)) * (W - L - R), Y = (v) => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
+  const line = p.map(([t, v], i) => `${i ? "L" : "M"}${X(t).toFixed(1)},${Y(v).toFixed(1)}`).join("");
+  const area = `${line}L${X(t1).toFixed(1)},${H - B}L${X(t0).toFixed(1)},${H - B}Z`;
+  const ticks = [0, 1, 2, 3].map((i) => y0 + ((y1 - y0) * (i + 0.5)) / 4);
+  const fmtD = (d) => d.toLocaleDateString("en-IN", view.range > 400 ? { month: "short", year: "numeric" } : { day: "numeric", month: "short" });
+  const xt = [0, 0.33, 0.66, 1].map((f) => new Date(+t0 + (t1 - t0) * f));
+  const up = vals[vals.length - 1] >= vals[0];
+  document.getElementById("chart").innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Share price chart">
+    <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".22"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>
+    ${ticks.map((v) => `<line x1="${L}" x2="${W - R}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="var(--line)"/><text x="${W - R + 6}" y="${(Y(v) + 4).toFixed(1)}" font-size="11" fill="var(--muted)" font-family="var(--mono)">${inr.format(v)}</text>`).join("")}
+    ${xt.map((d, i) => `<text x="${X(d).toFixed(1)}" y="${H - 8}" font-size="11" fill="var(--muted)" text-anchor="${i === 0 ? "start" : i === 3 ? "end" : "middle"}">${fmtD(d)}</text>`).join("")}
+    <path d="${area}" fill="url(#g)"/><path d="${line}" fill="none" stroke="var(--accent)" stroke-width="1.8"/>
+    <circle cx="${X(t1).toFixed(1)}" cy="${Y(vals[vals.length - 1]).toFixed(1)}" r="3.5" fill="var(--accent)"/></svg>
+    <p class="tiny" style="margin:4px 0 0">${pct(((vals[vals.length - 1] / vals[0]) - 1) * 100)} over this period <span class="${up ? "up" : "down"}">${up ? "▲" : "▼"}</span></p>`;
+}
+
+// ---------- industries
+function renderIndustries() {
+  const counts = {}; S.stocks.forEach((s) => (counts[s.ind] = (counts[s.ind] || 0) + 1));
+  const list = Object.values(S.industries).sort((a, b) => (b.score.share_tailwinds ?? -1) - (a.score.share_tailwinds ?? -1));
+  app().innerHTML = `<div><h1>Industries</h1><p class="sub">Ranked by how much of the economy is currently working for each industry.</p></div>
+    <div class="grid cards">${list.map((i) => { const s = i.score, t = s.judged ? (s.tailwinds / s.judged) * 100 : 0, h = s.judged ? (s.headwinds / s.judged) * 100 : 0;
+      const tone = s.share_tailwinds == null ? "neutral" : s.share_tailwinds >= 0.5 ? "tailwind" : s.headwinds > s.tailwinds ? "headwind" : "neutral";
+      return `<a class="card" href="#industry-${esc(i.id)}"><div style="display:flex;justify-content:space-between;gap:8px"><span class="name">${esc(i.label)}</span><span class="pill ${tone}">${tone === "tailwind" ? "supportive" : tone === "headwind" ? "unfavourable" : "mixed"}</span></div>
+        <div class="tiny">${s.tailwinds} tailwinds · ${s.headwinds} headwinds · ${s.judged} drivers · ${int.format(counts[i.id] || 0)} stocks</div>
+        <div class="bar" aria-hidden="true"><span class="t" style="width:${t}%"></span><span style="width:${100 - t - h}%"></span><span class="h" style="width:${h}%"></span></div></a>`; }).join("")}</div>`;
+}
+function renderIndustry(id) {
+  const m = S.industries[id];
+  if (!m) { app().innerHTML = `<section class="panel">Industry not found. <a href="#industries">All industries</a>.</section>`; return; }
+  const members = S.stocks.filter((s) => s.ind === id);
+  app().innerHTML = `<div><h1>${esc(m.label)}</h1><p class="sub">${int.format(members.length)} listed companies</p></div>
+    ${macroPanel(m, "Economy check")}
+    <section class="panel"><h2>Companies in this industry</h2><p class="sub">Top 40 by value traded. Companies are placed using NSE sector lists and company names.</p>${peersTable(members.slice(0, 40))}</section>
+    ${newsPanel(m.news, "Industry news")}`;
+}
+
+// ---------- economy
+function renderEconomy() {
+  app().innerHTML = `<div><h1>Economy</h1><p class="sub">Every indicator the portal tracks, with its 12-month trend.</p></div>
+    <section class="panel"><div class="scroll"><table style="min-width:640px"><thead><tr><th>Indicator</th><th class="num">Latest</th><th>Trend</th><th>Change</th><th>Source</th></tr></thead><tbody>${
+    S.economy.map((i) => `<tr><td>${esc(i.label)}</td><td class="num">${esc(i.latest_text || NA)}<div class="tiny">${i.latest_date ? when(i.latest_date) : ""}</div></td><td>${spark(i.trend)}</td><td class="small">${esc(i.change_text || "—")}</td><td class="tiny">${esc(i.source)}</td></tr>`).join("")}</tbody></table></div></section>`;
+}
+
+// ---------- boot (all data is embedded in this page by the refresh job)
+(function boot() {
+  try {
+    const D = JSON.parse(document.getElementById("portal-data").textContent);
+    const { stocks, meta } = D;
+    Object.assign(S, D);
+    stocks.forEach((s) => (S.byIsin[s.i] = s));
+    const live = stocks.some((s) => s.lp != null);
+    document.getElementById("fresh").textContent = `Updated ${when(meta.generated_at)}${live ? " · today's prices" : ` · closing prices of ${when(meta.prices_as_of.NSE)}`}`;
+    route();
+  } catch (e) {
+    app().innerHTML = `<section class="panel">The market data in this page could not be read (${esc(e.message)}).</section>`;
+  }
+})();
+</script>
