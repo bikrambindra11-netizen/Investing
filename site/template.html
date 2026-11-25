@@ -325,7 +325,12 @@ async function renderStock(isin) {
       <div class="notice">Financial statements, ratios (P/E, ROE, ROCE), shareholding, Graham's checks and valuation come from Upstox and need a personal Upstox login, which this hosted page cannot hold. They appear in the version of the portal you run on your own computer.</div></section>
     ${newsPanel((S.news || {})[isin], "News")}`;
   liveReport(isin, s);
-  const tq = techQ(isin); if (tq) drawTechChart(tq, "candlechart");
+  if (techStock(isin)) {
+    drawCandles(isin);
+    document.querySelectorAll("#cview .btn").forEach((b) => b.addEventListener("click", () => {
+      candleView = b.dataset.v; document.querySelectorAll("#cview .btn").forEach((x) => x.classList.toggle("on", x === b)); drawCandles(isin);
+    }));
+  }
   loadScores().then((sc) => {
     const el = document.getElementById("scorecard"); if (!el || !sc) return;
     const c = sc.cards.find((x) => x.isin === isin);
@@ -421,37 +426,53 @@ function renderEconomy() {
 function techStock(isin) {
   const T = S.tech || {}; const t = (T.stocks || {})[isin]; if (!t) return null;
   if (!t._ready) {  // expand the compact form once
-    t.patterns = t.patterns.map(([date, pattern, at]) => ({ date, pattern, price: at, meaning: (T.meanings || {})[pattern] || "" }));
+    const pat = (arr) => arr.map(([date, pattern, at]) => ({ date, pattern, price: at, meaning: (T.meanings || {})[pattern] || "" }));
+    t.patterns = pat(t.patterns);
     t._bars = t.bars.map((b, i) => (b ? [T.calendar[i], ...b] : null)).filter(Boolean);
+    t.w.patterns = pat(t.w.patterns);
+    t.w._bars = t.w.bars.map((b) => ["20" + b[0].slice(0, 2) + "-" + b[0].slice(2, 4) + "-" + b[0].slice(4, 6), ...b.slice(1)]);
     t._ready = true;
   }
   return t;
 }
-function techQ(isin) {
+function techQ(isin, view) {
   const t = techStock(isin); if (!t) return null;
-  return { chart: t._bars,
-           technicals: { supports: t.supports.map((l) => ({ ...l, kind: "support" })), resistances: t.resistances.map((l) => ({ ...l, kind: "resistance" })) },
-           structure: { fibonacci: t.fib, trend_lines: t.trend_lines, chart_patterns: t.chart_patterns, candles: t.patterns } };
+  const v = view === "weekly" ? t.w : t;
+  const kind = (arr, k) => arr.map((l) => ({ ...l, kind: k }));
+  return { chart: view === "weekly" ? t.w._bars : t._bars,
+           technicals: { supports: kind(v.supports, "support"), resistances: kind(v.resistances, "resistance") },
+           structure: { fibonacci: v.fib, trend_lines: v.trend_lines, chart_patterns: v.chart_patterns, candles: v.patterns }, recent: view === "weekly" ? 12 : 30 };
 }
+let candleView = "daily";
 function candleSection(isin) {
   const t = techStock(isin);
-  if (!t) return `<section class="panel"><h2>Candlestick chart</h2><p class="small">The marked candle chart is prepared for the 450 most traded stocks. For this one, press “Analyse now” above to build it live.</p></section>`;
+  if (!t) return `<section class="panel"><h2>Candlestick chart</h2><p class="small">The marked candle chart is prepared for the 300 most traded stocks. For this one, press “Analyse now” above to build it live.</p></section>`;
+  return `<section class="panel"><h2>Candlestick chart and patterns</h2>
+    <div class="ranges" id="cview"><button class="btn ${candleView === "daily" ? "on" : ""}" data-v="daily">Daily · 1 year</button><button class="btn ${candleView === "weekly" ? "on" : ""}" data-v="weekly">Weekly · 2 years</button></div>
+    <div class="chart" id="candlechart"></div><div id="candleinfo"></div></section>`;
+}
+function candleInfo(isin) {
+  const t = techStock(isin), wk = candleView === "weekly", v = wk ? t.w : t, el = document.getElementById("candleinfo"); if (!el) return;
   const lv = (a) => (a.length ? a.map((l) => `₹${price(l.level)} <span class="tiny">(${l.touches}×, ${pct(l.distance_pct)})</span>`).join("<br>") : NA);
-  const pats = t.patterns.slice().reverse();
-  return `<section class="panel"><h2>Candlestick chart and patterns</h2><p class="sub">Last 90 sessions of daily candles. Updated with each refresh (${when(S.meta.generated_at)}). Weekly trend: ${esc(t.weekly)}.</p>
-    <div class="chart" id="candlechart"></div>
-    <div class="grid kv" style="margin-top:8px">${kv("Support", lv(t.supports))}${kv("Resistance", lv(t.resistances))}
-      ${t.fib ? kv("Fibonacci", `${t.fib.levels.map((l) => `${l.ratio}: ₹${price(l.price)}`).join("<br>")}`) : ""}
-      ${kv("20 / 50 / 200-day avg", `${price(t.ma.sma20)} / ${price(t.ma.sma50)} / ${price(t.ma.sma200)}`)}
-      ${kv("RSI · ATR · volume", `${t.rsi ?? NA} · ${t.atr_pct ?? NA}% · ${t.volume_ratio ?? NA}×`)}
-      ${t.pivots ? kv("Pivot / R1 / S1", `${price(t.pivots.pivot)} / ${price(t.pivots.r1)} / ${price(t.pivots.s1)}`) : ""}</div>
-    ${t.fib ? `<p class="small">${esc(t.fib.reading)}</p>` : ""}
-    ${t.trend_lines.length ? `<ul class="small">${t.trend_lines.map((tl) => `<li>Trend line: ${esc(tl.kind)} from ₹${price(tl.from.price)} (${esc(tl.from.date)}) through ₹${price(tl.to.price)} (${esc(tl.to.date)}), ${tl.touches} touches, now ₹${price(tl.value_now)}</li>`).join("")}</ul>` : ""}
-    ${t.chart_patterns.length ? `<ul class="small">${t.chart_patterns.map((p) => `<li>${esc(p.pattern)} at ₹${price(p.level)}, neckline ₹${price(p.neckline)}: ${esc(p.meaning)}</li>`).join("")}</ul>` : ""}
-    <details class="sec" open><summary>Candlestick patterns in the last 30 sessions (${pats.length})</summary>
-      ${pats.length ? `<div class="scroll"><table><thead><tr><th>Date</th><th>Pattern</th><th>What it means</th><th class="num">At</th></tr></thead><tbody>${pats.map((p) => `<tr><td class="tiny">${esc(p.date)}</td><td><b>${esc(p.pattern)}</b></td><td class="small">${esc(p.meaning)}</td><td class="num">₹${price(p.price)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="small">No classic candlestick patterns in the last 30 sessions.</p>`}
-      <p class="tiny">A pattern matters more when it forms at a marked support/resistance, trend line or Fibonacci level, and on higher volume. Facts, not buy/sell signals.</p></details>
-    <ul class="small">${t.observations.map((o) => `<li>${esc(o)}</li>`).join("")}</ul></section>`;
+  const pats = v.patterns.slice().reverse();
+  el.innerHTML = `<p class="sub">${wk ? "104 weekly candles (2 years): the bigger trend and the major levels." : "250 daily sessions (1 year): levels, trend lines and Fibonacci are measured over the year; patterns over the last 30 sessions."} Weekly trend: ${esc(t.weekly)}. Updated ${when(S.meta.generated_at)}.</p>
+    <div class="grid kv" style="margin-top:8px">${kv("Support", lv(v.supports))}${kv("Resistance", lv(v.resistances))}
+      ${v.fib ? kv("Fibonacci", `${v.fib.levels.map((l) => `${l.ratio}: ₹${price(l.price)}`).join("<br>")}`) : ""}
+      ${wk ? "" : kv("20 / 50 / 200-day avg", `${price(t.ma.sma20)} / ${price(t.ma.sma50)} / ${price(t.ma.sma200)}`)}
+      ${wk ? "" : kv("RSI · ATR · volume", `${t.rsi ?? NA} · ${t.atr_pct ?? NA}% · ${t.volume_ratio ?? NA}×`)}
+      ${!wk && t.pivots ? kv("Pivot / R1 / S1", `${price(t.pivots.pivot)} / ${price(t.pivots.r1)} / ${price(t.pivots.s1)}`) : ""}</div>
+    ${v.fib ? `<p class="small">${esc(v.fib.reading)}</p>` : ""}
+    ${v.trend_lines.length ? `<ul class="small">${v.trend_lines.map((tl) => `<li>Trend line: ${esc(tl.kind)} from ₹${price(tl.from.price)} (${esc(tl.from.date)}) through ₹${price(tl.to.price)} (${esc(tl.to.date)}), ${tl.touches} touches, now ₹${price(tl.value_now)}</li>`).join("")}</ul>` : ""}
+    ${v.chart_patterns.length ? `<ul class="small">${v.chart_patterns.map((p) => `<li>${esc(p.pattern)} at ₹${price(p.level)}, neckline ₹${price(p.neckline)}: ${esc(p.meaning)}</li>`).join("")}</ul>` : ""}
+    <details class="sec" open><summary>Candlestick patterns in the last ${wk ? "12 weeks" : "30 sessions"} (${pats.length})</summary>
+      ${pats.length ? `<div class="scroll"><table><thead><tr><th>${wk ? "Week of" : "Date"}</th><th>Pattern</th><th>What it means</th><th class="num">At</th><th>Near a key level?</th></tr></thead><tbody>${pats.map((p) => { const near = [...v.supports, ...v.resistances].find((l) => Math.abs(p.price / l.level - 1) <= 0.015) || (v.fib && v.fib.levels.find((l) => Math.abs(p.price / l.price - 1) <= 0.015)); return `<tr><td class="tiny">${esc(p.date)}</td><td><b>${esc(p.pattern)}</b></td><td class="small">${esc(p.meaning)}</td><td class="num">₹${price(p.price)}</td><td class="small">${near ? `yes, ₹${price(near.level ?? near.price)}` : "—"}</td></tr>`; }).join("")}</tbody></table></div>` : `<p class="small">No classic candlestick patterns in this window.</p>`}
+      <p class="tiny">A pattern carries more weight when it forms at a marked support/resistance, trend line or Fibonacci level, on higher volume, and in line with the weekly trend. Facts, not buy/sell signals.</p></details>
+    ${wk ? "" : `<ul class="small">${t.observations.map((o) => `<li>${esc(o)}</li>`).join("")}</ul>`}`;
+}
+function drawCandles(isin) {
+  const q = techQ(isin, candleView); if (!q) return;
+  drawTechChart(q, "candlechart");
+  candleInfo(isin);
 }
 
 // ---------- live analysis (db + Claude Code Remote connector)
@@ -650,12 +671,12 @@ function drawTechChart(q, elId = "techchart") {
   const trend = tls.map((tl) => { const i1 = n - 1 - tl.from.bars_ago, x0 = Math.max(i1, 0); const y = (i) => tl.from.price + tl.slope_per_day * (i - i1); return `<line x1="${X(x0).toFixed(1)}" x2="${X(n - 1).toFixed(1)}" y1="${Y(y(x0)).toFixed(1)}" y2="${Y(y(n - 1)).toFixed(1)}" stroke="var(--accent)" stroke-width="1.6"/>`; }).join("");
   const necks = cps.filter((p) => inR(p.neckline)).map((p) => `<line x1="${L}" x2="${W - R}" y1="${Y(p.neckline).toFixed(1)}" y2="${Y(p.neckline).toFixed(1)}" stroke="#0ea5e9" stroke-dasharray="6 2 1 2" stroke-width="1"/>`).join("");
   const BEAR = ["Bearish engulfing", "Shooting star", "Evening star", "Three black crows", "Bearish marubozu", "Bearish harami", "Gap down"];
-  const marks = (st.candles || []).filter((p) => dates.indexOf(p.date) >= n - 25).map((p) => { const i = dates.indexOf(p.date), bear = BEAR.includes(p.pattern), y = bear ? Y(c[i].h) - 6 : Y(c[i].l) + 6; return `<path d="M${X(i).toFixed(1)},${y.toFixed(1)} l-3.5,${bear ? -6 : 6} h7 z" fill="${bear ? "var(--down)" : "var(--up)"}"><title>${esc(p.date)}: ${esc(p.pattern)} — ${esc(p.meaning)}</title></path>`; }).join("");
-  const months = c.filter((x, i) => i === 0 || x.d.slice(5, 7) !== c[i - 1].d.slice(5, 7)).filter((_, i) => i % 2 === 0);
+  const marks = (st.candles || []).filter((p) => dates.indexOf(p.date) >= n - (q.recent || 25)).map((p) => { const i = dates.indexOf(p.date), bear = BEAR.includes(p.pattern), y = bear ? Y(c[i].h) - 6 : Y(c[i].l) + 6; return `<path d="M${X(i).toFixed(1)},${y.toFixed(1)} l-3.5,${bear ? -6 : 6} h7 z" fill="${bear ? "var(--down)" : "var(--up)"}"><title>${esc(p.date)}: ${esc(p.pattern)} — ${esc(p.meaning)}</title></path>`; }).join("");
+  const months = c.filter((x, i) => i === 0 || x.d.slice(5, 7) !== c[i - 1].d.slice(5, 7)).filter((_, i, arr) => i % Math.max(1, Math.ceil(arr.length / 8)) === 0);
   el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Candlestick chart with support, resistance, Fibonacci, trend lines and patterns">${fibs}${necks}${lines}${trend}${candles}${marks}
     <path d="${ma(50)}" fill="none" stroke="var(--accent)" stroke-width="1.4"/><path d="${ma(20)}" fill="none" stroke="var(--muted)" stroke-width="1" stroke-dasharray="2 2"/>
-    ${months.map((x) => `<text x="${X(c.indexOf(x)).toFixed(1)}" y="${H - 6}" font-size="10" fill="var(--muted)">${new Date(x.d).toLocaleDateString("en-IN", { month: "short" })}</text>`).join("")}</svg>
-    <p class="tiny">Daily candles. Green/red dashed = support/resistance · dotted gold = Fibonacci · solid green = trend lines · blue dash-dot = pattern necklines · ▲▼ = candle patterns in the last 25 sessions (hover for names) · blue line = 50-day average, dotted grey = 20-day.</p>`;
+    ${months.map((x) => `<text x="${X(c.indexOf(x)).toFixed(1)}" y="${H - 6}" font-size="10" fill="var(--muted)">${new Date(x.d).toLocaleDateString("en-IN", { month: "short", year: c[0].d.slice(0, 4) !== c[c.length - 1].d.slice(0, 4) ? "2-digit" : undefined })}</text>`).join("")}</svg>
+    <p class="tiny">Daily candles. Green/red dashed = support/resistance · dotted gold = Fibonacci · solid green = trend lines · blue dash-dot = pattern necklines · ▲▼ = recent candlestick patterns (hover for names; listed below) · blue line = 50-candle average, dotted grey = 20-candle average (days on the daily chart, weeks on the weekly).</p>`;
 }
 
 

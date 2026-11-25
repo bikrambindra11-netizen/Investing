@@ -37,7 +37,7 @@ def main() -> None:
     ap.add_argument("out")
     ap.add_argument("--charts", type=int, default=800, help="price history for the N most traded stocks")
     ap.add_argument("--news", type=int, default=250, help="news for the N most traded stocks")
-    ap.add_argument("--tech", type=int, default=450, help="candles + chart structure for the N most traded stocks")
+    ap.add_argument("--tech", type=int, default=300, help="candles + chart structure for the N most traded stocks")
     ap.add_argument("--live", type=int, default=1000, help="today's latest price for the N most traded stocks")
     a = ap.parse_args()
     out = Path(a.out)
@@ -120,32 +120,64 @@ def main() -> None:
             "counts": {"stocks": len(stocks), "charts": len(charts), "news": len(news)}}
     # Candles + chart structure for the most traded stocks, so a stock page opens with the
     # candlestick chart, patterns and levels already marked.
-    tech, cal = {}, []
+    tech = {}
     nifty = candles_for("NSE_INDEX|Nifty 50")
-    cal = [x["date"] for x in nifty[-90:]]
-    meanings = {}
+    cal = [x["date"] for x in nifty[-250:]]  # one year of sessions
+    meanings = {"Gap up": "opened above the previous day's high, leaving a price gap",
+                "Gap down": "opened below the previous day's low, leaving a price gap"}
+
+    def weekly_bars(c):
+        from datetime import date as _d
+        weeks = {}
+        for x in c:
+            y, w, _ = _d.fromisoformat(x["date"]).isocalendar()
+            k = (y, w)
+            if k not in weeks:
+                weeks[k] = {"date": x["date"], "open": x["open"], "high": x["high"], "low": x["low"], "close": x["close"], "volume": x["volume"]}
+            else:
+                wk = weeks[k]
+                wk.update(high=max(wk["high"], x["high"]), low=min(wk["low"], x["low"]), close=x["close"], volume=wk["volume"] + x["volume"])
+        return [weeks[k] for k in sorted(weeks)]
+
+    def pack(rows):
+        return [[x["date"].replace("-", "")[2:], round(x["open"], 2), round(x["high"], 2), round(x["low"], 2), round(x["close"], 2), x["volume"]] for x in rows]
+
+    def levels(t_sup, t_res):
+        return ([{"level": l["level"], "touches": l["touches"], "distance_pct": l["distance_pct"]} for l in t_sup],
+                [{"level": l["level"], "touches": l["touches"], "distance_pct": l["distance_pct"]} for l in t_res])
+
     for isin, c in list(hist.items())[: a.tech]:
-        if len(c) < 60:
+        if len(c) < 120:
             continue
-        t = technicals.analyse(c, c[-1]["close"])
+        price = c[-1]["close"]
+        t = technicals.analyse(c, price)
         st = technicals.structure(c)
-        by_date = {x["date"]: x for x in c}
-        if c[-1]["date"] not in cal and c[-1]["date"] > (cal[-1] if cal else ""):
-            cal.append(c[-1]["date"])
-        bars = [by_date.get(d) for d in cal]
         for p in st["candles"]:
-            if not p["pattern"].startswith("Gap"):
-                meanings[p["pattern"]] = p["meaning"]
-        meanings["Gap up"] = "opened above the previous day's high, leaving a price gap"
-        meanings["Gap down"] = "opened below the previous day's low, leaving a price gap"
+            meanings.setdefault(p["pattern"], p["meaning"])
+        by_date = {x["date"]: x for x in c}
+        if c[-1]["date"] > cal[-1]:
+            cal.append(c[-1]["date"])
+        daily = [by_date.get(d) for d in cal]
+        sup, res = levels(t["supports"], t["resistances"])
+        # Weekly view: 2 years of weekly candles with its own levels and patterns
+        wk = weekly_bars(c[-260 * 3:])
+        wsl = technicals.swing_levels(wk, price, window=3, lookback=104, tol=0.02)
+        wsup, wres = levels(sorted([l for l in wsl if l["kind"] == "support"], key=lambda l: -l["level"])[:3],
+                            sorted([l for l in wsl if l["kind"] == "resistance"], key=lambda l: l["level"])[:3])
+        wpats = technicals.candle_patterns(wk, last=12)
+        for p in wpats:
+            meanings.setdefault(p["pattern"], p["meaning"])
         tech[isin] = {
-            "bars": [[round(x["open"], 2), round(x["high"], 2), round(x["low"], 2), round(x["close"], 2), x["volume"]] if x else None for x in bars],
-            "supports": [{"level": l["level"], "touches": l["touches"], "distance_pct": l["distance_pct"]} for l in t["supports"]],
-            "resistances": [{"level": l["level"], "touches": l["touches"], "distance_pct": l["distance_pct"]} for l in t["resistances"]],
+            "bars": [[round(x["open"], 2), round(x["high"], 2), round(x["low"], 2), round(x["close"], 2), x["volume"]] if x else None for x in daily],
+            "supports": sup, "resistances": res,
             "ma": t["moving_averages"], "rsi": t["rsi14"], "atr_pct": t["atr_pct"], "volume_ratio": t["volume_ratio"],
             "pivots": t["pivots"], "observations": t["observations"],
-            "fib": st["fibonacci"], "trend_lines": st["trend_lines"], "patterns": [[p["date"], p["pattern"], p["price"]] for p in st["candles"] if p["date"] >= cal[0]],
+            "fib": st["fibonacci"], "trend_lines": st["trend_lines"],
+            "patterns": [[p["date"], p["pattern"], p["price"]] for p in st["candles"]],
             "chart_patterns": st["chart_patterns"], "weekly": st["weekly"]["structure"],
+            "w": {"bars": pack(wk[-104:]), "supports": wsup, "resistances": wres,
+                  "fib": technicals.fibonacci(wk, lookback=104), "trend_lines": technicals.trend_lines(wk, lookback=104, tol=0.02),
+                  "patterns": [[p["date"], p["pattern"], p["price"]] for p in wpats], "chart_patterns": technicals.chart_patterns(wk)},
         }
 
     # Charts on one shared date axis (weekly for older years, daily for the last year) to keep the page small.
@@ -154,6 +186,8 @@ def main() -> None:
     axis = [d for i, d in enumerate(dates) if d >= cutoff or i % 5 == 0]
     series = {}
     for isin, pts in charts.items():
+        if isin in tech:
+            continue
         m, last, row = dict(pts), None, []
         for d in axis:
             if d in m:
