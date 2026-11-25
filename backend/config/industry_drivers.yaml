@@ -1,2 +1,180 @@
-# Industry -> macro driver map. Filled in Phase 4. Edit without code changes.
-industries: {}
+# Industry -> macro drivers. Edit freely; restart the backend to apply.
+#
+# An industry is picked for a stock by:
+#   1. `match`: words looked for in the company's detailed sector (from Upstox, when logged in)
+#   2. `name_match`: words looked for in the company's name (e.g. "... Bank Ltd")
+#   3. `nse_sectors`: NSE sector names (from NSE index lists)
+# The first industry that matches wins, so specific ones come first.
+#
+# Each driver: series id (see macro_series.yaml), good = whether a RISE helps (up) or hurts (down)
+# the industry, and why = the one-line reason shown to the user.
+# not_tracked: drivers that matter but have no free data source; shown as a note.
+industries:
+  banks:
+    label: Banks
+    match: [bank]
+    name_match: [bank]
+    nse_sectors: []
+    drivers:
+      - {series: india_call_rate, good: down, why: "Falling rates usually lift loan demand and bond gains, but can squeeze lending margins."}
+      - {series: india_credit, good: up, why: "Faster credit growth means more loans and more interest income."}
+      - {series: cpi, good: down, why: "Low inflation lets RBI keep rates steady and keeps borrowers healthy."}
+      - {series: india_10y, good: down, why: "Falling bond yields raise the value of the bonds banks hold."}
+    not_tracked: []
+  nbfc:
+    label: NBFCs & other lenders
+    match: [finance, nbfc, housing finance, lending, credit, microfinance]
+    name_match: [finance, financial, fincorp, finserv, credit, housing fin, capital]
+    nse_sectors: []
+    drivers:
+      - {series: india_call_rate, good: down, why: "Lenders borrow before they lend, so falling rates cut their funding cost."}
+      - {series: india_credit, good: up, why: "Faster credit growth means more loans to make."}
+      - {series: cpi, good: down, why: "Low inflation supports lower rates and healthier borrowers."}
+      - {series: india_10y, good: down, why: "Falling bond yields make their own borrowing cheaper."}
+    not_tracked: []
+  it:
+    label: IT services
+    match: [software, it services, it -, information technology, computers]
+    nse_sectors: [Information Technology]
+    drivers:
+      - {series: usd_inr, good: up, why: "IT firms earn in dollars, so a weaker rupee raises their rupee revenue."}
+      - {series: us_gdp, good: up, why: "The US is the biggest client market; a strong US economy means more tech spending."}
+      - {series: us_10y, good: down, why: "Lower US yields usually mean easier money for clients' tech budgets."}
+    not_tracked: []
+  cement:
+    label: Cement
+    match: [cement]
+    nse_sectors: [Construction Materials]
+    drivers:
+      - {series: iip_cement, good: up, why: "Rising cement output shows demand is growing."}
+      - {series: iip_infra, good: up, why: "More infrastructure and construction activity (largely govt capex) means more cement demand."}
+      - {series: coal, good: down, why: "Coal and pet-coke are big fuel costs; cheaper coal widens margins."}
+      - {series: india_call_rate, good: down, why: "Lower rates help housing demand."}
+    not_tracked: ["Housing demand (no free monthly series)"]
+  metals:
+    label: Metals & mining
+    match: [steel, iron, aluminium, aluminum, metal, copper, zinc, mining, ferro]
+    nse_sectors: [Metals & Mining]
+    drivers:
+      - {series: copper, good: up, why: "Higher global metal prices raise what producers earn per tonne."}
+      - {series: aluminium, good: up, why: "Higher global metal prices raise what producers earn per tonne."}
+      - {series: iron_ore, good: up, why: "Iron ore prices track global steel demand."}
+      - {series: china_imports, good: up, why: "China buys about half the world's metals; rising imports signal strong demand."}
+      - {series: iip_metals, good: up, why: "Rising Indian metal output shows local demand is healthy."}
+      - {series: coal, good: down, why: "Coking and thermal coal are big costs for steel and aluminium makers."}
+    not_tracked: []
+  power:
+    label: Power
+    match: [power, electric utilit, renewable, solar, wind energy]
+    nse_sectors: [Power]
+    drivers:
+      - {series: iip_electricity, good: up, why: "Rising electricity generation shows growing power demand."}
+      - {series: coal, good: down, why: "Coal is the main fuel for most Indian power plants."}
+      - {series: iip_renewables, good: up, why: "Faster renewable generation growth reflects new capacity being added."}
+      - {series: india_call_rate, good: down, why: "Power projects carry heavy debt; lower rates cut interest costs."}
+    not_tracked: ["Renewable capacity additions (no free monthly series; generation used instead)"]
+  oil_gas:
+    label: Oil & gas / refining
+    match: [refiner, oil, gas, petroleum, lpg, lubricant]
+    nse_sectors: [Oil Gas & Consumable Fuels]
+    drivers:
+      - {series: brent, good: down, why: "For Indian refiners and marketers, cheaper crude usually means better margins (but it hurts oil producers)."}
+      - {series: usd_inr, good: down, why: "Crude is bought in dollars, so a stronger rupee makes it cheaper."}
+      - {series: lng_asia, good: down, why: "Cheaper LNG helps gas distributors and users."}
+      - {series: iip_refining, good: up, why: "Rising refinery output shows demand for fuels."}
+    not_tracked: ["Refining margins (no free source)"]
+  auto:
+    label: Automobiles & auto parts
+    match: [auto, automobile, tyre, tire, vehicle, two wheeler, tractor]
+    nse_sectors: [Automobile and Auto Components]
+    drivers:
+      - {series: iip_auto, good: up, why: "Rising vehicle output shows sales demand."}
+      - {series: brent, good: down, why: "Cheaper crude means cheaper fuel, which supports vehicle demand."}
+      - {series: india_call_rate, good: down, why: "Most vehicles are bought on loans; lower rates mean lower EMIs."}
+      - {series: cpi_food, good: down, why: "Lower food inflation leaves rural households more to spend."}
+    not_tracked: ["Rural wages and tractor sales (no free monthly series)"]
+  fmcg:
+    label: FMCG (everyday consumer goods)
+    match: [fmcg, food, beverage, personal care, tobacco, consumer food, tea, dairy, edible]
+    nse_sectors: [Fast Moving Consumer Goods]
+    drivers:
+      - {series: cpi_food, good: down, why: "High food inflation squeezes household budgets and raises raw material costs."}
+      - {series: iip_nondurables, good: up, why: "Rising consumer non-durables output shows everyday spending is growing."}
+      - {series: brent, good: down, why: "Crude-linked packaging and freight costs fall when oil is cheap."}
+    not_tracked: ["Rural wages and monsoon (no free monthly series)"]
+  pharma:
+    label: Pharmaceuticals & healthcare
+    match: [pharma, drug, healthcare, hospital, diagnostic, biotech]
+    nse_sectors: [Healthcare]
+    drivers:
+      - {series: usd_inr, good: up, why: "Exporters earn in dollars, so a weaker rupee lifts rupee revenue."}
+      - {series: iip_pharma, good: up, why: "Rising pharma output shows healthy demand."}
+    not_tracked: ["US generic drug pricing (follow the news panel)"]
+  capital_goods:
+    label: Capital goods & defence
+    match: [capital goods, engineering, defence, defense, electrical equipment, heavy electrical, industrial machinery, cables]
+    nse_sectors: [Capital Goods, Construction]
+    drivers:
+      - {series: iip_capital_goods, good: up, why: "Rising capital goods output shows companies are investing."}
+      - {series: iip_infra, good: up, why: "More infrastructure building (largely govt capex) means more orders."}
+      - {series: iip_electrical, good: up, why: "Electrical equipment output tracks power and grid spending."}
+      - {series: india_call_rate, good: down, why: "Lower rates make it cheaper for clients to fund projects."}
+    not_tracked: ["Company order inflows (see the company's own news)"]
+  gold:
+    label: Gold & precious metals
+    match: [gold, silver, precious, jewel]
+    nse_sectors: []
+    drivers:
+      - {series: us_real_10y, good: down, why: "Gold pays no interest, so it shines when real yields fall."}
+      - {series: dollar_index, good: down, why: "Gold is priced in dollars; a weaker dollar usually lifts it."}
+      - {series: fed_funds, good: down, why: "Fed rate cuts tend to support gold."}
+      - {series: cpi, good: up, why: "Higher inflation increases demand for gold as a store of value."}
+    not_tracked: []
+  realty:
+    label: Real estate
+    match: [realty, real estate, housing, construction]
+    nse_sectors: [Realty]
+    drivers:
+      - {series: india_call_rate, good: down, why: "Home loans get cheaper when rates fall."}
+      - {series: iip_infra, good: up, why: "Construction activity tracks demand for buildings."}
+      - {series: cpi, good: down, why: "Low inflation keeps rates and building costs in check."}
+    not_tracked: []
+  chemicals:
+    label: Chemicals
+    match: [chemical, fertili, agrochemical, pesticide, paint, plastic]
+    nse_sectors: [Chemicals]
+    drivers:
+      - {series: iip_chemicals, good: up, why: "Rising chemicals output shows demand."}
+      - {series: brent, good: down, why: "Many chemicals are made from crude-linked feedstock."}
+      - {series: usd_inr, good: up, why: "Exporters earn more rupees when the rupee is weaker."}
+      - {series: china_imports, good: up, why: "Chinese demand sets global chemical prices."}
+    not_tracked: []
+  textiles:
+    label: Textiles
+    match: [textile, apparel, garment, yarn, cotton]
+    nse_sectors: [Textiles]
+    drivers:
+      - {series: iip_textiles, good: up, why: "Rising textile output shows demand."}
+      - {series: cotton, good: down, why: "Cotton is the main raw material."}
+      - {series: usd_inr, good: up, why: "Exporters earn more rupees when the rupee is weaker."}
+    not_tracked: []
+  consumer_durables:
+    label: Consumer durables
+    match: [durable, appliance, electronics, consumer electric]
+    nse_sectors: [Consumer Durables]
+    drivers:
+      - {series: iip_durables, good: up, why: "Rising durables output shows households are buying."}
+      - {series: iip_electronics, good: up, why: "Electronics output tracks appliance and device demand."}
+      - {series: india_call_rate, good: down, why: "Many appliances are bought on EMIs."}
+      - {series: cpi, good: down, why: "Lower inflation leaves more money for big purchases."}
+    not_tracked: []
+  general:
+    label: General economy
+    match: []
+    nse_sectors: [Telecommunication, Services, Consumer Services, "Media, Entertainment & Publication", Diversified, Forest Materials, Financial Services]
+    drivers:
+      - {series: gdp, good: up, why: "A faster-growing economy lifts most businesses."}
+      - {series: iip, good: up, why: "Rising industrial output signals broad demand."}
+      - {series: cpi, good: down, why: "Low inflation supports spending and lower rates."}
+      - {series: india_call_rate, good: down, why: "Lower rates cut borrowing costs."}
+    not_tracked: []

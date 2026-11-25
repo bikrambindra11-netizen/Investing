@@ -110,3 +110,13 @@ def init_db() -> None:
             with engine.begin() as conn:
                 conn.execute(text("DROP TABLE instruments"))
     Base.metadata.create_all(engine)
+
+
+class MacroPoint(Base):
+    """One observation of a macro indicator."""
+
+    __tablename__ = "macro_points"
+
+    series_id: Mapped[str] = mapped_column(String, primary_key=True)
+    date: Mapped[str] = mapped_column(String, primary_key=True)  # ISO date
+    value: Mapped[float] = mapped_column(Float)

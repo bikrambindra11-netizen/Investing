@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 
 from backend.sources import upstox_auth
 
-from . import jobs
+from . import jobs, macro, stock
 from .config import settings
 from .db import Instrument, SessionLocal, init_db
 from .jobs import feed
@@ -35,6 +35,15 @@ async def _refresh_and_restart_feed() -> None:
     feed.start()
 
 
+async def _refresh_macro() -> None:
+    await asyncio.to_thread(jobs.refresh_macro)
+
+
+async def _startup_refresh() -> None:
+    await _refresh_and_restart_feed()
+    await _refresh_macro()
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
@@ -44,8 +53,9 @@ async def lifespan(_: FastAPI):
         # Instrument list every morning; bhavcopy files appear in the evening / next morning.
         scheduler.add_job(_refresh_and_restart_feed, "cron", day_of_week="mon-fri", hour=8, minute=30)
         scheduler.add_job(_refresh_and_restart_feed, "cron", day_of_week="mon-fri", hour="18,21", minute=5)
+        scheduler.add_job(_refresh_macro, "cron", hour=7, minute=40)  # most macro series are monthly
         scheduler.start()
-        asyncio.create_task(_refresh_and_restart_feed())
+        asyncio.create_task(_startup_refresh())
     yield
     feed.stop()
     if scheduler:
@@ -173,3 +183,31 @@ async def upstox_callback(code: str | None = None, state: str | None = None) -> 
     jobs.save_token(token, upstox_auth.token_expiry(datetime.now(timezone.utc)))
     feed.start()
     return RedirectResponse(f"{settings.frontend_origin}/?upstox=connected")
+
+
+# ------------------------------------------------------------------ stock / industry / macro
+
+@app.get("/api/stock/{isin}")
+def stock_detail(isin: str) -> dict:
+    data = stock.stock_page(isin.upper())
+    if data is None:
+        raise HTTPException(404, "Stock not found")
+    return data
+
+
+@app.get("/api/industries")
+def industries() -> list[dict]:
+    return stock.industries_list()
+
+
+@app.get("/api/industry/{industry_id}")
+def industry(industry_id: str) -> dict:
+    data = stock.industry_page(industry_id)
+    if data is None:
+        raise HTTPException(404, "Industry not found")
+    return data
+
+
+@app.get("/api/macro")
+def macro_dashboard() -> dict:
+    return {"indicators": macro.all_indicators(), "status": jobs.job_status.get("macro")}

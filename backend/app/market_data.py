@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from backend.sources import bhavcopy, nse_indices
 
 from .db import DailyPrice, IndexClose, Instrument
+from .macro import resolve_industry
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -77,6 +78,8 @@ def build_rows(s: Session) -> tuple[list[dict], dict]:
             "turnover": price.turnover if price else None,
             "price_date": price.trade_date.isoformat() if price else None,
             "price_source": bhavcopy.SOURCES[price_ex] if price else None,
+            "sector": next((i.sector for i in group if i.sector), None),
+            "industry": resolve_industry(None, primary.name, next((i.sector for i in group if i.sector), None)),
         })
     rows.sort(key=lambda r: -(r["turnover"] or 0))
     return rows, {ex: (d.isoformat() if d else None) for ex, d in as_of.items()}

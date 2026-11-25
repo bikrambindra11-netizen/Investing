@@ -1,0 +1,38 @@
+[
+ {
+  "name": "Dividend",
+  "expiry_date": "14 Aug 2025",
+  "amount": 5.5,
+  "ratio": null,
+  "event_details": [
+   {
+    "name": "Announcement date",
+    "value": "25 Apr 2025"
+   },
+   {
+    "name": "Ex dividend date",
+    "value": "14 Aug 2025"
+   },
+   {
+    "name": "Record date",
+    "value": "14 Aug 2025"
+   },
+   {
+    "name": "Dividend type",
+    "value": "Final"
+   },
+   {
+    "name": "Amount",
+    "value": "5.5"
+   },
+   {
+    "name": "Dividend %",
+    "value": "55.0"
+   },
+   {
+    "name": "Details",
+    "value": "Rs.5.5000 per share(55%)Final Dividend"
+   }
+  ]
+ }
+]

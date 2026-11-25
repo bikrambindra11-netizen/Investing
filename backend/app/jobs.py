@@ -6,7 +6,9 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, select
 
-from backend.sources import bhavcopy, nse_indices, upstox_feed, upstox_instruments
+from backend.sources import bhavcopy, nse_indices, nse_sectors, upstox_feed, upstox_instruments
+
+from . import macro
 
 from .config import settings
 from .db import DailyPrice, IndexClose, Instrument, SessionLocal, UpstoxToken, utcnow
@@ -79,8 +81,36 @@ def refresh_indices() -> None:
         _record("indices", False, str(e))
 
 
+def refresh_sectors() -> None:
+    try:
+        sectors = nse_sectors.fetch()
+        with SessionLocal() as s:
+            n = 0
+            for ins in s.scalars(select(Instrument)):
+                sec = sectors.get(ins.isin or "")
+                if sec:
+                    ins.sector = sec
+                    ins.macro_sector = nse_sectors.SECTOR_TO_MACRO.get(sec)
+                    n += 1
+            s.commit()
+        _record("sectors", True, f"sector known for {len(sectors)} companies ({n} listings)")
+    except Exception as e:
+        _record("sectors", False, str(e))
+
+
+def refresh_macro() -> None:
+    try:
+        res = macro.refresh_macro(today_ist())
+        bad = {k: v for k, v in res.items() if v.startswith("error")}
+        _record("macro", not bad, f"{len(res) - len(bad)} of {len(res)} indicators updated"
+                + (f"; failed: {', '.join(bad)}" if bad else ""))
+    except Exception as e:
+        _record("macro", False, str(e))
+
+
 def refresh_all() -> None:
     refresh_instruments()
+    refresh_sectors()
     refresh_prices()
     refresh_indices()
 

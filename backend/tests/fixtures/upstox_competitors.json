@@ -1,0 +1,32 @@
+[
+ {
+  "instrument_key": "NSE_EQ|INE242A01010",
+  "company_profile": "Indian Oil Corporation Limited is an India-based oil company. The Company's segments include Petroleum Products, Petrochemicals, Gas, and Other Business Activities. Its business interests span the entire hydrocarbon value-chain, ranging from refining, pipeline transportation and marketing to exploration and production of petrochemicals, natural gas and alternative energy.",
+  "sector": "Refineries",
+  "sector_market_cap_inr": {
+   "value": 204334.32,
+   "unit": "crore",
+   "formatted": "204,334.32 Cr"
+  },
+  "sector_market_cap_usd": {
+   "value": 22.7,
+   "unit": "billion",
+   "formatted": "$22.70B"
+  }
+ },
+ {
+  "instrument_key": "NSE_EQ|INE029A01011",
+  "company_profile": "Bharat Petroleum Corporation Limited is an India-based company, which is engaged in the refining of crude oil and marketing of petroleum products. Its segments include Downstream Petroleum and Exploration & Production of Hydrocarbons.",
+  "sector": "Refineries",
+  "sector_market_cap_inr": {
+   "value": 131391.64,
+   "unit": "crore",
+   "formatted": "131,391.64 Cr"
+  },
+  "sector_market_cap_usd": {
+   "value": 14.6,
+   "unit": "billion",
+   "formatted": "$14.60B"
+  }
+ }
+]

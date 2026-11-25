@@ -1,0 +1,52 @@
+# Macro indicators the portal tracks. Edit freely; restart the backend to apply.
+#
+# source: fred      ref = FRED series id
+#         mospi_cpi ref = CPI division (All-India, Combined), value = inflation % YoY
+#         mospi_iip ref = IIP "category" or "category|sub_category", value = growth % YoY
+#         mospi_gdp ref = (unused), value = real GDP growth % YoY
+#         rbi       ref = key from the RBI home page rates panel (snapshot each day)
+# kind:   level   -> judged on change over 12 months (band = size of a "no real change" move)
+#         reading -> judged on the latest 3-period average versus hi / lo thresholds
+# transform: yoy  -> convert a level series into % growth versus a year earlier first
+series:
+  usd_inr:        {label: "US dollar in rupees (USD/INR)", source: fred, ref: DEXINUS, unit: "₹ per $", kind: level, band_pct: 2}
+  us_10y:         {label: "US 10-year bond yield", source: fred, ref: DGS10, unit: "%", kind: level, band_pts: 0.25}
+  us_real_10y:    {label: "US 10-year real yield", source: fred, ref: DFII10, unit: "%", kind: level, band_pts: 0.25}
+  fed_funds:      {label: "US Fed policy rate", source: fred, ref: FEDFUNDS, unit: "%", kind: level, band_pts: 0.25}
+  dollar_index:   {label: "US dollar index (broad)", source: fred, ref: DTWEXBGS, unit: "index", kind: level, band_pct: 2}
+  us_gdp:         {label: "US GDP growth (annualised)", source: fred, ref: A191RL1Q225SBEA, unit: "%", kind: reading, hi: 2.5, lo: 1.0}
+  brent:          {label: "Brent crude oil", source: fred, ref: DCOILBRENTEU, unit: "$ per barrel", kind: level, band_pct: 5}
+  lng_asia:       {label: "LNG price (Asia)", source: fred, ref: PNGASJPUSDM, unit: "$ per mmBtu", kind: level, band_pct: 5}
+  coal:           {label: "Coal price (Australia)", source: fred, ref: PCOALAUUSDM, unit: "$ per tonne", kind: level, band_pct: 5}
+  copper:         {label: "Copper price", source: fred, ref: PCOPPUSDM, unit: "$ per tonne", kind: level, band_pct: 5}
+  aluminium:      {label: "Aluminium price", source: fred, ref: PALUMUSDM, unit: "$ per tonne", kind: level, band_pct: 5}
+  iron_ore:       {label: "Iron ore price", source: fred, ref: PIORECRUSDM, unit: "$ per tonne", kind: level, band_pct: 5}
+  zinc:           {label: "Zinc price", source: fred, ref: PZINCUSDM, unit: "$ per tonne", kind: level, band_pct: 5}
+  cotton:         {label: "Cotton price", source: fred, ref: PCOTTINDUSDM, unit: "US cents per pound", kind: level, band_pct: 5}
+  china_imports:  {label: "China imports (demand signal)", source: fred, ref: XTIMVA01CNM667S, unit: "% YoY", kind: reading, transform: yoy, hi: 3, lo: -2}
+  india_10y:      {label: "India 10-year G-sec yield", source: fred, ref: INDIRLTLT01STM, unit: "%", kind: level, band_pts: 0.25}
+  india_call_rate: {label: "India overnight interbank rate (tracks RBI repo)", source: fred, ref: IRSTCI01INM156N, unit: "%", kind: level, band_pts: 0.25}
+  india_credit:   {label: "Bank & other credit to private sector", source: fred, ref: CRDQINAPABIS, unit: "% YoY", kind: reading, transform: yoy, hi: 12, lo: 8}
+  repo_rate:      {label: "RBI repo rate", source: rbi, ref: repo_rate, unit: "%", kind: level, band_pts: 0.2}
+  cpi:            {label: "India CPI inflation", source: mospi_cpi, ref: "CPI (General)", unit: "% YoY", kind: reading, hi: 6, lo: 4}
+  cpi_food:       {label: "India food inflation (CPI)", source: mospi_cpi, ref: "Food and beverages", unit: "% YoY", kind: reading, hi: 6, lo: 3}
+  gdp:            {label: "India real GDP growth", source: mospi_gdp, ref: "", unit: "% YoY", kind: reading, hi: 7, lo: 5.5}
+  iip:            {label: "India industrial output (IIP)", source: mospi_iip, ref: "General", unit: "% YoY", kind: reading, hi: 5, lo: 1}
+  iip_mfg:        {label: "IIP manufacturing", source: mospi_iip, ref: "Manufacturing", unit: "% YoY", kind: reading, hi: 5, lo: 1}
+  iip_mining:     {label: "IIP mining", source: mospi_iip, ref: "Mining & Quarrying", unit: "% YoY", kind: reading, hi: 4, lo: 0}
+  iip_electricity: {label: "Electricity generation (IIP)", source: mospi_iip, ref: "Electricity & Gas Supply|Electricity", unit: "% YoY", kind: reading, hi: 5, lo: 1}
+  iip_renewables: {label: "Renewable electricity generation (IIP)", source: mospi_iip, ref: "Electricity & Gas Supply|Renewable Electricity", unit: "% YoY", kind: reading, hi: 10, lo: 3}
+  iip_cement:     {label: "Cement & non-metallic minerals output (IIP)", source: mospi_iip, ref: "Manufacturing|Manufacture of Other Non-metallic Mineral Products", unit: "% YoY", kind: reading, hi: 6, lo: 1}
+  iip_metals:     {label: "Basic metals output (IIP)", source: mospi_iip, ref: "Manufacturing|Manufacture of Basic Metals", unit: "% YoY", kind: reading, hi: 5, lo: 1}
+  iip_auto:       {label: "Motor vehicles output (IIP)", source: mospi_iip, ref: "Manufacturing|Manufacture of Motor Vehicles, Trailers and Semi-trailers", unit: "% YoY", kind: reading, hi: 6, lo: 0}
+  iip_pharma:     {label: "Pharma output (IIP)", source: mospi_iip, ref: "Manufacturing|Manufacture of basic pharmaceutical products and pharmaceutical preparations", unit: "% YoY", kind: reading, hi: 5, lo: 0}
+  iip_chemicals:  {label: "Chemicals output (IIP)", source: mospi_iip, ref: "Manufacturing|Manufacture of Chemicals and Chemical Products", unit: "% YoY", kind: reading, hi: 5, lo: 0}
+  iip_textiles:   {label: "Textiles output (IIP)", source: mospi_iip, ref: "Manufacturing|Manufacture of Textiles", unit: "% YoY", kind: reading, hi: 4, lo: 0}
+  iip_refining:   {label: "Refined petroleum output (IIP)", source: mospi_iip, ref: "Manufacturing|Manufacture of Coke and Refined Petroleum Products", unit: "% YoY", kind: reading, hi: 4, lo: 0}
+  iip_electronics: {label: "Electronics output (IIP)", source: mospi_iip, ref: "Manufacturing|Manufacture of Computer, Electronic and Optical Products", unit: "% YoY", kind: reading, hi: 8, lo: 0}
+  iip_electrical: {label: "Electrical equipment output (IIP)", source: mospi_iip, ref: "Manufacturing|Manufacture of Electrical Equipment", unit: "% YoY", kind: reading, hi: 6, lo: 0}
+  iip_food:       {label: "Food products output (IIP)", source: mospi_iip, ref: "Manufacturing|Manufacture of Food Products", unit: "% YoY", kind: reading, hi: 4, lo: 0}
+  iip_capital_goods: {label: "Capital goods output (IIP)", source: mospi_iip, ref: "Capital Goods", unit: "% YoY", kind: reading, hi: 6, lo: 0}
+  iip_infra:      {label: "Infrastructure & construction goods (IIP, proxy for govt capex)", source: mospi_iip, ref: "Infrastructure/ Construction Goods", unit: "% YoY", kind: reading, hi: 6, lo: 1}
+  iip_durables:   {label: "Consumer durables output (IIP)", source: mospi_iip, ref: "Consumer Durables", unit: "% YoY", kind: reading, hi: 5, lo: 0}
+  iip_nondurables: {label: "Consumer non-durables output (IIP)", source: mospi_iip, ref: "Consumer Non-durables", unit: "% YoY", kind: reading, hi: 4, lo: 0}
