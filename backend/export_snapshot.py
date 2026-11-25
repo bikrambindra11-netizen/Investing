@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
-from backend.app import analysis, macro
+from backend.app import analysis, macro, technicals
 from backend.app.db import SessionLocal
 from backend.app.jobs import today_ist
 from backend.app.market_data import INDEX_TILES, build_rows
@@ -37,6 +37,7 @@ def main() -> None:
     ap.add_argument("out")
     ap.add_argument("--charts", type=int, default=800, help="price history for the N most traded stocks")
     ap.add_argument("--news", type=int, default=250, help="news for the N most traded stocks")
+    ap.add_argument("--tech", type=int, default=450, help="candles + chart structure for the N most traded stocks")
     ap.add_argument("--live", type=int, default=1000, help="today's latest price for the N most traded stocks")
     a = ap.parse_args()
     out = Path(a.out)
@@ -117,6 +118,36 @@ def main() -> None:
 
     meta = {"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "prices_as_of": as_of,
             "counts": {"stocks": len(stocks), "charts": len(charts), "news": len(news)}}
+    # Candles + chart structure for the most traded stocks, so a stock page opens with the
+    # candlestick chart, patterns and levels already marked.
+    tech, cal = {}, []
+    nifty = candles_for("NSE_INDEX|Nifty 50")
+    cal = [x["date"] for x in nifty[-90:]]
+    meanings = {}
+    for isin, c in list(hist.items())[: a.tech]:
+        if len(c) < 60:
+            continue
+        t = technicals.analyse(c, c[-1]["close"])
+        st = technicals.structure(c)
+        by_date = {x["date"]: x for x in c}
+        if c[-1]["date"] not in cal and c[-1]["date"] > (cal[-1] if cal else ""):
+            cal.append(c[-1]["date"])
+        bars = [by_date.get(d) for d in cal]
+        for p in st["candles"]:
+            if not p["pattern"].startswith("Gap"):
+                meanings[p["pattern"]] = p["meaning"]
+        meanings["Gap up"] = "opened above the previous day's high, leaving a price gap"
+        meanings["Gap down"] = "opened below the previous day's low, leaving a price gap"
+        tech[isin] = {
+            "bars": [[round(x["open"], 2), round(x["high"], 2), round(x["low"], 2), round(x["close"], 2), x["volume"]] if x else None for x in bars],
+            "supports": [{"level": l["level"], "touches": l["touches"], "distance_pct": l["distance_pct"]} for l in t["supports"]],
+            "resistances": [{"level": l["level"], "touches": l["touches"], "distance_pct": l["distance_pct"]} for l in t["resistances"]],
+            "ma": t["moving_averages"], "rsi": t["rsi14"], "atr_pct": t["atr_pct"], "volume_ratio": t["volume_ratio"],
+            "pivots": t["pivots"], "observations": t["observations"],
+            "fib": st["fibonacci"], "trend_lines": st["trend_lines"], "patterns": [[p["date"], p["pattern"], p["price"]] for p in st["candles"] if p["date"] >= cal[0]],
+            "chart_patterns": st["chart_patterns"], "weekly": st["weekly"]["structure"],
+        }
+
     # Charts on one shared date axis (weekly for older years, daily for the last year) to keep the page small.
     dates = sorted({d for v in charts.values() for d, _ in v})
     cutoff = dates[-1][:4] and str(int(dates[-1][:4]) - 1) + dates[-1][4:] if dates else ""
@@ -131,8 +162,9 @@ def main() -> None:
         series[isin] = row
 
     data = {"stocks": stocks, "indices": indices, "industries": industries, "economy": macro.all_indicators(),
-            "stats": stats, "news": {k: v[:6] for k, v in news.items()}, "meta": meta,
-            "charts": {"dates": axis, "series": series}}
+            "stats": stats, "news": {k: v[:5] for k, v in news.items()}, "meta": meta,
+            "charts": {"dates": axis, "series": series},
+            "tech": {"calendar": cal, "meanings": meanings, "stocks": tech}}
     blob = json.dumps(data, separators=(",", ":"), default=str).replace("<", "\\u003c")
     page = TEMPLATE.read_text().replace("__PORTAL_DATA__", blob)
     (out / "index.html").write_text(page)

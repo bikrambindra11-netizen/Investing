@@ -310,7 +310,8 @@ async function renderStock(isin) {
       <ul>${reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>
       <div class="chips"><span class="chip">Economy: ${share == null ? NA : Math.round(share * 100) + "% tailwinds"}</span><span class="chip">Company financials: need Upstox login</span><span class="chip">1-year price: ${st && st.return_1y != null ? pct(st.return_1y) : NA}</span></div>
       <p class="tiny" style="margin:10px 0 0;font-weight:600">Screening output only. Not investment advice.</p></section>
-    <section class="panel"><h2>Price</h2>
+    ${candleSection(isin)}
+    <section class="panel"><h2>Price history</h2>
       ${series ? `<div class="ranges" id="ranges">${[["1M", 31], ["6M", 183], ["1Y", 366], ["3Y", 1096], ["5Y", 1827]].map(([l, d]) => `<button class="btn ${view.range === d ? "on" : ""}" data-d="${d}">${l}</button>`).join("")}</div><div class="chart" id="chart"></div>` : `<p class="small">Price chart is kept for the 800 most traded stocks; not available for this one.</p>`}
       ${st && st.available ? `<div class="grid stats" style="margin-top:10px">${statBox("52-week high", "₹" + price(st.high_52w))}${statBox("52-week low", "₹" + price(st.low_52w))}${statBox("From 52-week high", pct(st.from_high_pct))}${statBox("Avg daily volume (3 mo)", vol(st.avg_volume_3m))}${statBox("1 month", pct(st.return_1m))}${statBox("6 months", pct(st.return_6m))}${statBox("1 year", pct(st.return_1y))}${statBox("5 years, a year", pct(st.cagr_5y))}</div>` : ""}
       <p class="src">Source: Upstox historical prices${st && st.as_of ? ` · daily closes up to ${when(st.as_of)}` : ""}. Last session: volume ${vol(s.v)}, traded ₹${cr(s.t)} Cr (${esc(s.src || NA)}, ${when(s.d)}).</p></section>
@@ -324,6 +325,7 @@ async function renderStock(isin) {
       <div class="notice">Financial statements, ratios (P/E, ROE, ROCE), shareholding, Graham's checks and valuation come from Upstox and need a personal Upstox login, which this hosted page cannot hold. They appear in the version of the portal you run on your own computer.</div></section>
     ${newsPanel((S.news || {})[isin], "News")}`;
   liveReport(isin, s);
+  const tq = techQ(isin); if (tq) drawTechChart(tq, "candlechart");
   loadScores().then((sc) => {
     const el = document.getElementById("scorecard"); if (!el || !sc) return;
     const c = sc.cards.find((x) => x.isin === isin);
@@ -413,6 +415,44 @@ function renderEconomy() {
     S.economy.map((i) => `<tr><td>${esc(i.label)}</td><td class="num">${esc(i.latest_text || NA)}<div class="tiny">${i.latest_date ? when(i.latest_date) : ""}</div></td><td>${spark(i.trend)}</td><td class="small">${esc(i.change_text || "—")}</td><td class="tiny">${esc(i.source)}</td></tr>`).join("")}</tbody></table></div></section>`;
 }
 
+
+
+// ---------- candlestick chart + patterns from the hourly refresh
+function techStock(isin) {
+  const T = S.tech || {}; const t = (T.stocks || {})[isin]; if (!t) return null;
+  if (!t._ready) {  // expand the compact form once
+    t.patterns = t.patterns.map(([date, pattern, at]) => ({ date, pattern, price: at, meaning: (T.meanings || {})[pattern] || "" }));
+    t._bars = t.bars.map((b, i) => (b ? [T.calendar[i], ...b] : null)).filter(Boolean);
+    t._ready = true;
+  }
+  return t;
+}
+function techQ(isin) {
+  const t = techStock(isin); if (!t) return null;
+  return { chart: t._bars,
+           technicals: { supports: t.supports.map((l) => ({ ...l, kind: "support" })), resistances: t.resistances.map((l) => ({ ...l, kind: "resistance" })) },
+           structure: { fibonacci: t.fib, trend_lines: t.trend_lines, chart_patterns: t.chart_patterns, candles: t.patterns } };
+}
+function candleSection(isin) {
+  const t = techStock(isin);
+  if (!t) return `<section class="panel"><h2>Candlestick chart</h2><p class="small">The marked candle chart is prepared for the 450 most traded stocks. For this one, press “Analyse now” above to build it live.</p></section>`;
+  const lv = (a) => (a.length ? a.map((l) => `₹${price(l.level)} <span class="tiny">(${l.touches}×, ${pct(l.distance_pct)})</span>`).join("<br>") : NA);
+  const pats = t.patterns.slice().reverse();
+  return `<section class="panel"><h2>Candlestick chart and patterns</h2><p class="sub">Last 90 sessions of daily candles. Updated with each refresh (${when(S.meta.generated_at)}). Weekly trend: ${esc(t.weekly)}.</p>
+    <div class="chart" id="candlechart"></div>
+    <div class="grid kv" style="margin-top:8px">${kv("Support", lv(t.supports))}${kv("Resistance", lv(t.resistances))}
+      ${t.fib ? kv("Fibonacci", `${t.fib.levels.map((l) => `${l.ratio}: ₹${price(l.price)}`).join("<br>")}`) : ""}
+      ${kv("20 / 50 / 200-day avg", `${price(t.ma.sma20)} / ${price(t.ma.sma50)} / ${price(t.ma.sma200)}`)}
+      ${kv("RSI · ATR · volume", `${t.rsi ?? NA} · ${t.atr_pct ?? NA}% · ${t.volume_ratio ?? NA}×`)}
+      ${t.pivots ? kv("Pivot / R1 / S1", `${price(t.pivots.pivot)} / ${price(t.pivots.r1)} / ${price(t.pivots.s1)}`) : ""}</div>
+    ${t.fib ? `<p class="small">${esc(t.fib.reading)}</p>` : ""}
+    ${t.trend_lines.length ? `<ul class="small">${t.trend_lines.map((tl) => `<li>Trend line: ${esc(tl.kind)} from ₹${price(tl.from.price)} (${esc(tl.from.date)}) through ₹${price(tl.to.price)} (${esc(tl.to.date)}), ${tl.touches} touches, now ₹${price(tl.value_now)}</li>`).join("")}</ul>` : ""}
+    ${t.chart_patterns.length ? `<ul class="small">${t.chart_patterns.map((p) => `<li>${esc(p.pattern)} at ₹${price(p.level)}, neckline ₹${price(p.neckline)}: ${esc(p.meaning)}</li>`).join("")}</ul>` : ""}
+    <details class="sec" open><summary>Candlestick patterns in the last 30 sessions (${pats.length})</summary>
+      ${pats.length ? `<div class="scroll"><table><thead><tr><th>Date</th><th>Pattern</th><th>What it means</th><th class="num">At</th></tr></thead><tbody>${pats.map((p) => `<tr><td class="tiny">${esc(p.date)}</td><td><b>${esc(p.pattern)}</b></td><td class="small">${esc(p.meaning)}</td><td class="num">₹${price(p.price)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="small">No classic candlestick patterns in the last 30 sessions.</p>`}
+      <p class="tiny">A pattern matters more when it forms at a marked support/resistance, trend line or Fibonacci level, and on higher volume. Facts, not buy/sell signals.</p></details>
+    <ul class="small">${t.observations.map((o) => `<li>${esc(o)}</li>`).join("")}</ul></section>`;
+}
 
 // ---------- live analysis (db + Claude Code Remote connector)
 const ANALYST_TRIGGER = "trig_01HnnKsTAojbDkKoaoK3T4g4";
@@ -591,8 +631,8 @@ function renderFramework(fw) {
   return h;
 }
 
-function drawTechChart(q) {
-  const el = document.getElementById("techchart"); if (!el) return;
+function drawTechChart(q, elId = "techchart") {
+  const el = document.getElementById(elId); if (!el) return;
   const c = q.chart.map((r) => ({ d: r[0], o: r[1], h: r[2], l: r[3], c: r[4] }));
   const t = q.technicals, W = 760, H = 300, L = 8, R = 70, T = 10, B = 24;
   const st = q.structure || {}, fib = st.fibonacci, tls = st.trend_lines || [], cps = st.chart_patterns || [];
@@ -615,7 +655,7 @@ function drawTechChart(q) {
   el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Candlestick chart with support, resistance, Fibonacci, trend lines and patterns">${fibs}${necks}${lines}${trend}${candles}${marks}
     <path d="${ma(50)}" fill="none" stroke="var(--accent)" stroke-width="1.4"/><path d="${ma(20)}" fill="none" stroke="var(--muted)" stroke-width="1" stroke-dasharray="2 2"/>
     ${months.map((x) => `<text x="${X(c.indexOf(x)).toFixed(1)}" y="${H - 6}" font-size="10" fill="var(--muted)">${new Date(x.d).toLocaleDateString("en-IN", { month: "short" })}</text>`).join("")}</svg>
-    <p class="tiny">Last 12 months, daily candles. Green/red dashed = support/resistance · dotted gold = Fibonacci · solid green = trend lines · blue dash-dot = pattern necklines · ▲▼ = candle patterns in the last 25 sessions (hover for names) · blue line = 50-day average, dotted grey = 20-day.</p>`;
+    <p class="tiny">Daily candles. Green/red dashed = support/resistance · dotted gold = Fibonacci · solid green = trend lines · blue dash-dot = pattern necklines · ▲▼ = candle patterns in the last 25 sessions (hover for names) · blue line = 50-day average, dotted grey = 20-day.</p>`;
 }
 
 
