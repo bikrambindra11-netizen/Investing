@@ -102,6 +102,9 @@ details.sec { border-top: 1px solid var(--line); padding-top: 8px } details.sec 
 .kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px }
 .idea { border-left: 4px solid var(--accent); background: var(--soft); padding: 10px 12px; border-radius: 4px }
 .idea.up { border-left-color: var(--up) } .idea.down { border-left-color: var(--down) }
+.ichart { position: relative } .ichart .legend { position: absolute; left: 8px; top: 6px; z-index: 3; font: 12px var(--mono); background: color-mix(in srgb, var(--panel) 85%, transparent); padding: 3px 6px; border-radius: 4px; pointer-events: none; max-width: calc(100% - 90px) }
+.toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 } .toolbar label { font-size: 12px; color: var(--muted); display: flex; gap: 4px; align-items: center }
+.btn.sm { padding: 3px 9px; font-size: 12px } .btn.armed { background: var(--warn-bg); border-color: var(--warn); color: var(--warn) }
 footer { font-size: 12px; color: var(--muted); padding-block: 0 30px }
 @media (prefers-reduced-motion: no-preference) { .tile, .card { transition: border-color .15s } }
 </style>
@@ -121,6 +124,7 @@ footer { font-size: 12px; color: var(--muted); padding-block: 0 30px }
 <main class="wrap" id="app"><p class="loading">Loading the market…</p></main>
 <footer class="wrap">Personal screening tool. Not investment advice. Prices: NSE/BSE close files and Upstox minute prices; economy: MoSPI, RBI, FRED; news: Google News.</footer>
 
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
 <script id="portal-data" type="application/json">__PORTAL_DATA__</script>
 <script>
 "use strict";
@@ -422,6 +426,127 @@ function renderEconomy() {
 
 
 
+
+// ---------- interactive candlestick chart (zoom, pan, inspect, draw)
+const ICH = {};  // live chart instances by element id
+function smaArr(v, n) { const o = []; let s = 0; for (let i = 0; i < v.length; i++) { s += v[i]; if (i >= n) s -= v[i - n]; o.push(i >= n - 1 ? s / n : null); } return o; }
+function rsiArr(v, n = 14) { const o = new Array(v.length).fill(null); if (v.length <= n) return o; let g = 0, l = 0; for (let i = 1; i <= n; i++) { const d = v[i] - v[i - 1]; g += Math.max(d, 0); l += Math.max(-d, 0); } g /= n; l /= n; o[n] = l ? 100 - 100 / (1 + g / l) : 100; for (let i = n + 1; i < v.length; i++) { const d = v[i] - v[i - 1]; g = (g * (n - 1) + Math.max(d, 0)) / n; l = (l * (n - 1) + Math.max(-d, 0)) / n; o[i] = l ? 100 - 100 / (1 + g / l) : 100; } return o; }
+function readDrawings(key) { try { return JSON.parse(localStorage.getItem("draw:" + key) || "[]"); } catch (e) { return []; } }
+function saveDrawings(key, d) { try { localStorage.setItem("draw:" + key, JSON.stringify(d)); } catch (e) { /* drawings stay for this visit */ } }
+
+function interactiveChart(elId, q, storeKey) {
+  const el = document.getElementById(elId); if (!el) return;
+  if (ICH[elId]) { ICH[elId].destroy(); delete ICH[elId]; }
+  if (!window.LightweightCharts) { drawTechChart(q, elId); return; }  // library blocked: fall back to the static chart
+  const LC = window.LightweightCharts, cs = getComputedStyle(document.documentElement);
+  const tok = (n, fb) => (cs.getPropertyValue(n).trim() || fb);
+  const UP = tok("--up", "#12733f"), DN = tok("--down", "#b42318"), INK = tok("--muted", "#5d6b66"), GRID = tok("--line", "#dde3e0"), ACC = tok("--accent", "#0d5c4a"), WARN = tok("--warn", "#8a5a00");
+  const rows = q.chart.map((r) => ({ time: r[0], open: r[1], high: r[2], low: r[3], close: r[4], volume: r[5] }));
+  const st = q.structure || {}, t = q.technicals || {};
+  const patByDate = {}; (st.candles || []).forEach((p) => (patByDate[p.date] = (patByDate[p.date] ? patByDate[p.date] + ", " : "") + p.pattern));
+  const on = Object.assign({ levels: true, fib: true, trend: true, patterns: true, ma: true, volume: true, rsi: true }, (ICH._prefs || {}));
+  el.innerHTML = `<div class="toolbar">
+      ${[["levels", "Support/resistance"], ["fib", "Fibonacci"], ["trend", "Trend lines"], ["patterns", "Patterns"], ["ma", "Averages"], ["volume", "Volume"], ["rsi", "RSI"]].map(([k, l]) => `<label><input type="checkbox" data-o="${k}" ${on[k] ? "checked" : ""}> ${l}</label>`).join("")}
+    </div><div class="toolbar">
+      <button class="btn sm" data-a="hline">+ Horizontal line</button><button class="btn sm" data-a="tline">+ Trend line</button>
+      <button class="btn sm" data-a="undo">Undo drawing</button><button class="btn sm" data-a="clear">Clear my drawings</button>
+      <button class="btn sm" data-a="zin">Zoom in</button><button class="btn sm" data-a="zout">Zoom out</button><button class="btn sm" data-a="fit">Fit all</button>
+      <span class="tiny" data-hint></span></div>
+    <div class="ichart"><div class="legend" data-legend></div><div data-main style="height:420px"></div></div><div data-rsi style="height:110px"></div>
+    <p class="tiny">Scroll or pinch to zoom, drag to move through time, hover or tap a candle to read it. Your lines are saved for this stock in this browser.</p>`;
+  const mainEl = el.querySelector("[data-main]"), rsiEl = el.querySelector("[data-rsi]"), legend = el.querySelector("[data-legend]"), hint = el.querySelector("[data-hint]");
+  const base = { layout: { background: { type: "solid", color: "transparent" }, textColor: INK, fontSize: 11 }, grid: { vertLines: { color: GRID }, horzLines: { color: GRID } },
+    rightPriceScale: { borderVisible: false }, timeScale: { borderVisible: false, rightOffset: 4 }, crosshair: { mode: LC.CrosshairMode.Normal }, autoSize: true,
+    handleScroll: true, handleScale: true };
+  const main = LC.createChart(mainEl, base), rsiC = on.rsi ? LC.createChart(rsiEl, base) : null;
+  if (!on.rsi) rsiEl.style.display = "none";
+  const candle = main.addCandlestickSeries({ upColor: UP, downColor: DN, wickUpColor: UP, wickDownColor: DN, borderVisible: false });
+  candle.setData(rows.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
+  if (on.volume) {
+    const vol = main.addHistogramSeries({ priceScaleId: "v", priceFormat: { type: "volume" }, lastValueVisible: false, priceLineVisible: false });
+    main.priceScale("v").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+    vol.setData(rows.map((r) => ({ time: r.time, value: r.volume, color: r.close >= r.open ? "rgba(18,115,63,.35)" : "rgba(180,35,24,.35)" })));
+  }
+  const closes = rows.map((r) => r.close);
+  if (on.ma) [[20, "#94a3b8"], [50, "#2563eb"], [200, "#7c3aed"]].forEach(([n, col]) => {
+    const v = smaArr(closes, n); if (!v.some((x) => x != null)) return;
+    main.addLineSeries({ color: col, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, title: `${n}` })
+      .setData(v.map((x, i) => (x == null ? null : { time: rows[i].time, value: x })).filter(Boolean));
+  });
+  const pl = (price, color, title, style, width = 1) => candle.createPriceLine({ price, color, lineWidth: width, lineStyle: style, axisLabelVisible: true, title });
+  if (on.levels) {
+    (t.supports || []).forEach((l) => pl(l.level, UP, `S ${l.touches}×`, LC.LineStyle.Dashed, 2));
+    (t.resistances || []).forEach((l) => pl(l.level, DN, `R ${l.touches}×`, LC.LineStyle.Dashed, 2));
+    (st.chart_patterns || []).forEach((p) => pl(p.neckline, "#0ea5e9", `${p.pattern} neck`, LC.LineStyle.LargeDashed));
+  }
+  if (on.fib && st.fibonacci) st.fibonacci.levels.forEach((l) => pl(l.price, WARN, `Fib ${l.ratio}`, LC.LineStyle.Dotted));
+  const n = rows.length;
+  if (on.trend) (st.trend_lines || []).forEach((tl) => {
+    const i1 = n - 1 - tl.from.bars_ago; if (i1 < 0 && n - 1 - tl.to.bars_ago < 0) return;
+    const at = (i) => tl.from.price + tl.slope_per_day * (i - i1), x0 = Math.max(i1, 0);
+    main.addLineSeries({ color: ACC, lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+      .setData([{ time: rows[x0].time, value: at(x0) }, { time: rows[n - 1].time, value: at(n - 1) }]);
+  });
+  const BEAR = ["Bearish engulfing", "Shooting star", "Evening star", "Three black crows", "Bearish marubozu", "Bearish harami", "Gap down"];
+  if (on.patterns) {
+    const dates = new Set(rows.map((r) => r.time));
+    candle.setMarkers((st.candles || []).filter((p) => dates.has(p.date)).map((p) => { const b = BEAR.includes(p.pattern);
+      return { time: p.date, position: b ? "aboveBar" : "belowBar", color: b ? DN : UP, shape: b ? "arrowDown" : "arrowUp", text: p.pattern }; })
+      .sort((a, b) => (a.time < b.time ? -1 : 1)));
+  }
+  if (rsiC) {
+    const r = rsiArr(closes), s = rsiC.addLineSeries({ color: "#7c3aed", lineWidth: 1, title: "RSI 14" });
+    s.setData(r.map((x, i) => (x == null ? { time: rows[i].time } : { time: rows[i].time, value: x })));  // blanks keep the panes aligned
+    [70, 30].forEach((v) => s.createPriceLine({ price: v, color: v === 70 ? DN : UP, lineWidth: 1, lineStyle: LC.LineStyle.Dotted, axisLabelVisible: false }));
+    const sync = (a, b) => a.timeScale().subscribeVisibleLogicalRangeChange((rg) => rg && b.timeScale().setVisibleLogicalRange(rg));
+    sync(main, rsiC); sync(rsiC, main);
+  }
+  // Legend: the candle under the cursor
+  const byTime = {}; rows.forEach((r, i) => (byTime[r.time] = i));
+  const tkey = (tm) => (tm == null ? null : typeof tm === "string" ? tm : typeof tm === "object" ? `${tm.year}-${String(tm.month).padStart(2, "0")}-${String(tm.day).padStart(2, "0")}` : new Date(tm * 1000).toISOString().slice(0, 10));
+  const showLegend = (i) => { const r = rows[i]; if (!r) return; const p = i > 0 ? rows[i - 1].close : r.open, ch = (r.close / p - 1) * 100;
+    legend.innerHTML = `${esc(r.time)} O ${price(r.open)} H ${price(r.high)} L ${price(r.low)} C ${price(r.close)} <span class="${cls(ch)}">${pct(ch)}</span> V ${vol(r.volume)}${patByDate[r.time] ? ` · <b>${esc(patByDate[r.time])}</b>` : ""}`; };
+  showLegend(n - 1);
+  main.subscribeCrosshairMove((pm) => { const k = pm && tkey(pm.time); if (k && byTime[k] != null) showLegend(byTime[k]); else showLegend(n - 1); });
+  // Drawings
+  let draw = readDrawings(storeKey), mode = null, firstPt = null;
+  const drawn = [];
+  const render = () => {
+    drawn.forEach((d) => (d.kind === "h" ? candle.removePriceLine(d.obj) : main.removeSeries(d.obj))); drawn.length = 0;
+    draw.forEach((d) => {
+      if (d.kind === "h") drawn.push({ kind: "h", obj: candle.createPriceLine({ price: d.price, color: "#f59e0b", lineWidth: 2, lineStyle: LC.LineStyle.Solid, axisLabelVisible: true, title: "mine" }) });
+      else { const s = main.addLineSeries({ color: "#f59e0b", lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+        const pts = [{ time: d.t1, value: d.p1 }, { time: d.t2, value: d.p2 }].sort((a, b) => (a.time < b.time ? -1 : 1));
+        if (pts[0].time !== pts[1].time) s.setData(pts); drawn.push({ kind: "t", obj: s }); }
+    });
+  };
+  render();
+  const arm = (m) => { mode = m; firstPt = null; el.querySelectorAll("[data-a=hline],[data-a=tline]").forEach((b) => b.classList.toggle("armed", b.dataset.a === m));
+    hint.textContent = m === "hline" ? "Click the chart at the price for the line." : m === "tline" ? "Click the first point, then the second." : ""; };
+  // Every click counts (the chart's own click event swallows quick second clicks as a double-click)
+  mainEl.addEventListener("click", (e) => {
+    if (!mode) return;
+    const rc = mainEl.getBoundingClientRect(), x = e.clientX - rc.left, y = e.clientY - rc.top;
+    const price_ = candle.coordinateToPrice(y); if (price_ == null) return;
+    const li = main.timeScale().coordinateToLogical(x); if (li == null) return;
+    const tk = rows[Math.max(0, Math.min(n - 1, Math.round(li)))].time;
+    if (mode === "hline") { draw.push({ kind: "h", price: +price_.toFixed(2) }); saveDrawings(storeKey, draw); render(); arm(null); }
+    else if (!firstPt) { firstPt = { t: tk, p: +price_.toFixed(2) }; hint.textContent = "Now click the second point."; }
+    else { draw.push({ kind: "t", t1: firstPt.t, p1: firstPt.p, t2: tk, p2: +price_.toFixed(2) }); saveDrawings(storeKey, draw); render(); arm(null); }
+  });
+  const zoom = (f) => { const r = main.timeScale().getVisibleLogicalRange(); if (!r) return; const w = (r.to - r.from) * f; main.timeScale().setVisibleLogicalRange({ from: r.to - w, to: r.to }); };  // keep the right edge (latest candles) in view
+  el.querySelectorAll("[data-a]").forEach((b) => b.addEventListener("click", () => {
+    const a = b.dataset.a;
+    if (a === "hline" || a === "tline") arm(mode === a ? null : a);
+    if (a === "undo") { draw.pop(); saveDrawings(storeKey, draw); render(); }
+    if (a === "clear") { draw = []; saveDrawings(storeKey, draw); render(); }
+    if (a === "zin") zoom(0.6); if (a === "zout") zoom(1.6); if (a === "fit") main.timeScale().fitContent();
+  }));
+  el.querySelectorAll("[data-o]").forEach((c) => c.addEventListener("change", () => { ICH._prefs = Object.assign({}, on, { [c.dataset.o]: c.checked }); interactiveChart(elId, q, storeKey); }));
+  main.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 120), to: n + 3 });
+  ICH[elId] = { destroy: () => { main.remove(); rsiC && rsiC.remove(); } };
+}
+
 // ---------- candlestick chart + patterns from the hourly refresh
 function techStock(isin) {
   const T = S.tech || {}; const t = (T.stocks || {})[isin]; if (!t) return null;
@@ -471,7 +596,7 @@ function candleInfo(isin) {
 }
 function drawCandles(isin) {
   const q = techQ(isin, candleView); if (!q) return;
-  drawTechChart(q, "candlechart");
+  interactiveChart("candlechart", q, `${isin}:${candleView}`);
   candleInfo(isin);
 }
 
@@ -523,7 +648,7 @@ function liveReport(isin, s) {
     if (d.quant) html += renderQuant(d.quant, d.framework);
     if (d.framework) html += renderFramework(d.framework);
     body.innerHTML = html;
-    if (d.quant && d.quant.chart) drawTechChart(d.quant);
+    if (d.quant && d.quant.chart) interactiveChart("techchart", d.quant, `${isin}:live`);
   });
 }
 

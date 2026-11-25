@@ -69,20 +69,27 @@ def main() -> None:
         else:
             indices.append({"label": label, "close": None})
 
-    # Price history + stats for the most traded stocks
+    # Price history + stats for the most traded stocks (today's candle comes from the exchange
+    # close file when Upstox's daily history has not caught up yet)
+    from backend.app.db import DailyPrice as _DP
     top = [r for r in rows if r["close"] is not None][: a.charts]
     with ThreadPoolExecutor(6) as ex:
         hist = dict(zip([r["isin"] for r in top], ex.map(lambda r: candles_for(r["key"]), top)))
+    with SessionLocal() as s_:
+        for r in top:
+            c = hist.get(r["isin"])
+            if not c:
+                continue
+            p_ = s_.get(_DP, (r["key"], __import__("datetime").date.fromisoformat(r["price_date"]))) if r["price_date"] else None
+            if p_ and p_.close and r["price_date"] > c[-1]["date"]:
+                hist[r["isin"]] = c + [{"date": r["price_date"], "open": p_.open or p_.close, "high": p_.high or p_.close,
+                                        "low": p_.low or p_.close, "close": p_.close, "volume": p_.volume or 0}]
     charts, stats = {}, {}
     by_isin = {r["isin"]: r for r in top}
     for isin, c in hist.items():
         if not c:
             continue
-        r = by_isin[isin]
-        if r["price_date"] and r["close"] and r["price_date"] > c[-1]["date"]:
-            # The exchange close file is newer than Upstox's daily history: add that close.
-            c = c + [{"date": r["price_date"], "open": r["close"], "high": r["close"], "low": r["close"],
-                      "close": r["close"], "volume": r["volume"] or 0}]
+
         stats[isin] = analysis.price_stats(c)
         last5 = [x for x in c if x["date"] >= str(int(c[-1]["date"][:4]) - 5) + c[-1]["date"][4:]]
         daily = last5[-260:]
