@@ -1,0 +1,351 @@
+{
+ "date": "2026-11-25",
+ "summary": "Nifty +1.85% to 25,819 on a 17th straight session of foreign buying (about ₹1.2 lakh crore in November), a rupee at an 8-month high (92.16/$) and Brent easing to about $88-91. After the close the US proposed a 25% 'excess capacity' tariff on Indian goods (17% if a trade deal is signed); GIFT Nifty fell 0.5% and the Nasdaq dropped 4% on an AI selloff. October CPI was 6.09%, above RBI's band, and economists expect a 25 bp repo-rate hike in December. Q2 GDP (due 30 Nov) is expected near 7.5%.",
+ "events": [
+  {
+   "title": "US proposes 25% tariff on Indian goods, 17% if a trade deal is signed",
+   "detail": "Proposed under an 'excess capacity' probe covering India and 13 other economies; rates and product lists are not final. Goods exporters to the US are exposed; services (IT) are not covered by goods tariffs; specialty pharma was exempted from the separate 100% drug tariff in September. A deal at 17% would be a relief versus 25%. Impact sized as a hit to export margins for US-heavy exporters, not to domestic demand. Applied only to companies whose business description mentions exports or US customers.",
+   "sources": [
+    {
+     "title": "US Tariffs on Indian Goods: A Detailed Chronology",
+     "url": "https://news.google.com/rss/articles/CBMiogFBVV95cUxQZkpUclExZFBBYzdxWXBfV1JmamxFdXZKMVhYUFFHbWIzRTdQMEswdERRU3I2ZTFrT0dxbktMd0ZyREVKc0lUOEF3RVpwVURycGpna0xTU1k4aW9LdEJlSkFwT0wtQXRPbUVQN2d1N1VLYjU5UTh1bk1KOEY0XzlhTmNtZ1pZTUE1Ty1UeXdNbXZMeWV3aTJwRERTdWxoX0x3dGfSAacBQVVfeXFMUDYxM1pBVUFvQk4teVhoME1IeGtiRkFVNXJIcXRWcWpFTm5fU3JEbEhvcDVkcm1SdDViVmVqQjN1Q2ZSVy1QZ2xhanRBdy1FbXJ1Z2tsLVNvZ3lnVFhReGEtcklXeC14QlNDY3UxR2dzaEZ2ajZOaUVHMkpBQW9KbUx3Ym51UExCbXgwUEE5dlctV2VGTUdjTGRGSS1HSXpmeGl3c2NMWWc?oc=5",
+     "publisher": "Rediff MoneyWiz"
+    },
+    {
+     "title": "US proposes up to 25% ‘excess capacity’ tariff on India, 17% if trade deal is signed",
+     "url": "https://news.google.com/rss/articles/CBMi2gFBVV95cUxQbzhuZFFYRnJEVWYwcU5jalJCRE13Wmc3b1F6bE5QOXJjbjRmRHRCdHZ3a0s3TGc5OHFaTUJxWVU0X2ZzVmQ0bkVuV3hYamR0bUx4NEMzSEZOR3RldThrV0tyX3QybmpKdGtwQzY0Y3RGc2V6Z0NrTEZFRk0waGQ0SEttOXZqWVlTS3p5Vi1sRy1oblVYYm0yamJOazJJVzRGSnF5UEJ1Q0pBQmx6eVRrSDVCeWd1Rmc0Vl9uVm5CTk5ROWFCMlg5emRuM3lGQ2ROLXRZRDNvUldUd9IB3wFBVV95cUxPaWhnTmQwaEZGVEgwOGw2cW1HYTUxVHVOZGNkWFVLYU5CVGNrUFVEZ2NNV2V6Vkd1TDJocXJvcEFXUGdLNUhtUkxZVzZRMTB0bWEzZWk0cHgwNmhkbWdmSGRsLThuV0FxOTdvRTB1aG9PX2RxQlc0bFZpQk1Udm5rNjlYdjRmV253MUo2d2lad1p3blYxQjVZcG1oRGlQVmlkV0NsRmZIckRNb0tJZFNsNy1SSGI5TGdHaklaSXB0blkwaEtfLTZwY3FlYnZaNUd5STVhUHFHdDFyeEZQdkdj?oc=5",
+     "publisher": "Telegraph India"
+    },
+    {
+     "title": "India awaits tariff edge as USTR hints at relief",
+     "url": "https://news.google.com/rss/articles/CBMiqAFBVV95cUxOd2NlcF8tRmx0c0U5Q1V0R2R4ejdnX2NsMUFPenhZcERIVmdiMm5wdGhCTVcybVVXRFNKOEpKVEQ4X3pDcUF4Y3RrWFZnMkZlNzhxMGN3QXViVjVDZzA4UjhlbUlwUUVkTFlLQ1hnU01SdEs0UDdrMTJscGQxUkN4NWZ3OG9KaFgxMWhkaU9xbjJJNEYtdjlMNGlWRkh0MEppb0ZjeVhlMHXSAa8BQVVfeXFMUER0ZXkzbzNpcGVWNlV0a0c0azdkLTVRV0ZoSWZJQnltd29QbjhEV2hwZTZiVzRpY0NDZ01uWTlkN2lqamNQbVpWWkhfTF9TQk5fRkRLMjhZSjRJMVBWSXdXdVVKYU5DRFNIZkFhX0NQRXVxT2VfU0Q2YTRtdXpEZnpiZjhua2s0aXh0YW1SVVFwZGtDMUNaQ2QweFpVRkxhd09PemtMckkza1A1dHkzWQ?oc=5",
+     "publisher": "The Financial Express"
+    }
+   ],
+   "industries": {
+    "textiles": [
+     -2,
+     "Apparel and home textiles are among the most US-dependent exports; 17-25% duty squeezes margins or volumes."
+    ],
+    "gold": [
+     -1,
+     "Gems and jewellery exports to the US are exposed."
+    ],
+    "auto": [
+     -1,
+     "Auto-component exporters to the US are exposed; domestic carmakers are not."
+    ],
+    "chemicals": [
+     -1,
+     "Specialty chemical exporters to the US are exposed."
+    ],
+    "metals": [
+     -1,
+     "An 'excess capacity' probe usually targets steel and aluminium."
+    ],
+    "capital_goods": [
+     -0.5,
+     "Engineering goods exports are exposed in part."
+    ],
+    "pharma": [
+     -0.5,
+     "Generics may be covered; specialty drugs already exempted from the 100% drug tariff."
+    ]
+   },
+   "exporters_only": true
+  },
+  {
+   "title": "Inflation above RBI's band: a 25 bp repo-rate hike is expected in December",
+   "detail": "October CPI 6.09%; economists (SBI, Baroda BNP Paribas MF) expect a 25 bp hike. Higher rates raise borrowing costs for lenders and home and vehicle buyers.",
+   "sources": [
+    {
+     "title": "RBI flags broadening inflationary pressure as price rises spread across more consumer categories",
+     "url": "https://news.google.com/rss/articles/CBMi4gFBVV95cUxPYzdNd2FQTldRckdlanB3d1o1UC1GN1N4MmxwWUNIaEpILUp0YTFzd1lKUnFIdG1FYWNRdUJjd3kzd1hlbU1xWDN2YnZYLTNwdUx1ZE9CN0x2d1BGZThvUXRRandKNHJ0MkVadnYxRWZBV0RiVXVuQS01QU16b3FnNTJyYUY1T3hTZ3J6UDVvdHFSQlNBdlFSM29Pdkc5VEVHbVlyaEk2NW9SVDRxZnZTTGt0MjZ6RW9HSWJZRkxBTS1YTHRNS204bXltZWg3d3BOWmF6dEM5UENLRC1BVXlvTHZ30gHnAUFVX3lxTFA2dXRqcTY1a3NhdXNrT1JDTGZQcHVqNEUyQUkyX056c1pUV0xObllRS2pCdnl6WEs1VjN6VWJQUlBaYlNMcDZPUU1OVGdpcVM5LTd0NlFvOWltNTFBMUx3UnowdWNfY1d5NjEzRGVjR2phajE3SDhkZ2hOR1hBWUUwR05iY0ZaU0lwUzlXNlo4dGZYU0FsZjRFbXpmd0tGMWJkeTF0VE5KTGVLQmlNbi1NdmtVeTYtTDJWbzBLQXhYbWpYMGxfVVB6Q2hxRUtjQ0E4Y0tEOExIbWlCRFlJLVA4X3l1MG1Ncw?oc=5",
+     "publisher": "Telegraph India"
+    },
+    {
+     "title": "The escalation trap tightens: A misstep can trigger a NATO-Russia face-off",
+     "url": "https://news.google.com/rss/articles/CBMi7gFBVV95cUxPNHB3a3BNejEtd0h5ejgyY3AwOW9QNXNxZFRTeHVtaFBGMUl5Uk1UQzVhOVgyYVV2Y3lmYVhtRW5ObExJVXBkd01DOTVRRUtqSl9yZDBWeFBEa1dlaG9KbUNVVXNZSy01eXBjTV92eU16S253RHZtdXp0TTFWeTl3WEhvcHV4MW9yTHZLSzlIcFpwZmQ1R0VDdWUzcXRaMmh4Yk9zMzRMQ2VZY0FpNlE1RFNJWDJwR3RmSWFEUnlYWGdTU3k2VzBPM2lsUC1Gc3p5b2hnVHFWaHdrWUxwYU9fejRjal83ZWo4TzBELXV30gHuAUFVX3lxTE80cHdrcE16MS13SHl6ODJjcDA5b1A1c3FkVFN4dW1oUEYxSXlSTVRDNWE5WDJhVXZjeWZhWG1Fbk5sTElVcGR3TUM5NVFFS2pKX3JkMFZ4UERrV2Vob0ptQ1VVc1lLLTV5cGNNX3Z5TXpLbndEdm11enRNMVZ5OXdYSG9wdXgxb3JMdktLOUhwWnBmZDVHRUN1ZTNxdFoyaHhiT3MzNExDZVljQWk2UTVEU0lYMnBHdGZJYURSeVhYZ1NTeTZXME8zaWxQLUZzenlvaGdUcVZod2tZTHBhT196NGNqXzdlajhPMEQtdXc?oc=5",
+     "publisher": "The Economic Times"
+    }
+   ],
+   "industries": {
+    "realty": [
+     -1.5,
+     "Costlier home loans hurt demand."
+    ],
+    "nbfc": [
+     -1.5,
+     "Funding costs rise faster than loan yields for most NBFCs."
+    ],
+    "auto": [
+     -0.5,
+     "Vehicle loans get dearer."
+    ],
+    "consumer_durables": [
+     -0.5,
+     "EMI-led purchases get dearer."
+    ],
+    "capital_markets": [
+     -0.5,
+     "Higher rates usually cool equity flows."
+    ],
+    "banks": [
+     0,
+     "Loan yields reprice up (helps margins) but credit costs and bond losses can rise: roughly neutral."
+    ]
+   }
+  },
+  {
+   "title": "Foreign investors buy for 17 straight sessions; rupee at an 8-month high",
+   "detail": "FIIs bought about ₹4,479 crore today and nearly ₹1.2 lakh crore in November; banks and FMCG led. The rupee rose 69 paise to 92.16/$. A stronger rupee trims rupee revenue for exporters and cuts import costs.",
+   "sources": [
+    {
+     "title": "FIIs buy ₹4,479 crore as buying streak hits 17 sessions; equities, rupee rally",
+     "url": "https://news.google.com/rss/articles/CBMivwFBVV95cUxNa0N5Qzd2Y2NOWUpWQ0g0b29OSENTRXhGT0kwTE8yR2tWZ0p6Nk8wcXFtTjhnX3FJNjlha3UzS2RJMG55OTd1ZHc4d0hUaWltSVZwdDJYeHhmZ2luSE9xRGpQOFplZjVCSHRGSzh3OUpNekI2dG9HYUNfeWhDWFJYRWx5Uy11cTBnVkhXWE1DYVNsR3FLdkxrazZhRTl2NkhPSnQ3QzRGZkU0MmJObFNmb2FJRzZkek1WQzlkeF9GSdIBxAFBVV95cUxOdGNMNXE1ZzZNcWtjeWdubFJSZjRaNkRvbHprdjN4Y1lfeEp3S3JoMGdnT1lSSjRhNlBRX0NyTm5ja2lHdkhxbnhOZDdGRk0xdjRrV0h1SEpxd1M4S1VJa0lJNjFLSExmMXZFNEVNY2RJY1Y4WS1CWnpWanBFNHdrQXBUNldvNGh0YlM4RzdVblc3REpaNVRfby1mWGt6bFFXMGM5WWxqcWR3RWNMUUs3akhoQV80VS1ZTktNOWJ2LW9HMm1y?oc=5",
+     "publisher": "CNBC TV18"
+    },
+    {
+     "title": "Sensex Rally: Markets Jump 1,400 Points on Record FII Flows",
+     "url": "https://news.google.com/rss/articles/CBMijAFBVV95cUxNbjk1UjA4TFBORW9vWXB5bGZnT2RFbk1zVmxIeDhrS1BBQ0xwdEJzVkJJcXVZZlRjcWNJWmt0NWdHMXhtaUE1dHJiWERLRXJMOTJWb1phUEJpWGpLRzdHbWNHcXBRMk9vOXF4Q3FiUEJINXRDS2UzM2xPdWo3cW0wX2stMkRDV0dmMWNrag?oc=5",
+     "publisher": "theopenpress.in"
+    },
+    {
+     "title": "Silver plunges Rs 7,000 to hit fresh 1-year low; gold drops to Rs 1.26 lakh per 10g",
+     "url": "https://news.google.com/rss/articles/CBMi9wFBVV95cUxPeDRiQmZwdXZnS1pGQVk2aTNFSk1adDlWMW5IYjBfZVRFbE9NNHFWb2Nkb0FXLW9DWXo1cWYzYno0eHMyc0VxTFZMQzh0VWRZd0xXZWpyTzQ5NHZrU3E0eWFhOXNZRWpWM0pxRHJQb3R4cDJSNUhCMVhwRFNDLWRMRWRRVDJuSGsxQmV4OFJiMjZ2TUc3U0dyMmpJbU1YazdPelBoTU9kSHVtbEp1cWhzbHh2R0NyeG53Z3R4Nk4wYUhlX0pEZUFWLTNpYzBhRkJRYVl1Qnp6UURNNi12SElIUzU5M0lEUDJJcFpkVWNpamlpcjdhZVVJ?oc=5",
+     "publisher": "Rediff.com"
+    }
+   ],
+   "industries": {
+    "banks": [
+     1,
+     "Banks (private and PSU) led today's rally on foreign buying."
+    ],
+    "fmcg": [
+     1,
+     "FMCG led the rally (Nifty FMCG +3.8%)."
+    ],
+    "it": [
+     -0.5,
+     "A stronger rupee trims rupee revenue for exporters."
+    ],
+    "pharma": [
+     -0.5,
+     "A stronger rupee trims export revenue."
+    ],
+    "oil_gas": [
+     0.5,
+     "A stronger rupee lowers the rupee cost of crude imports."
+    ]
+   }
+  },
+  {
+   "title": "Brent eases to about $88-91 on supply-glut fears",
+   "detail": "Lower crude helps oil marketing companies, paints, tyres and airlines; it hurts upstream producers.",
+   "sources": [
+    {
+     "title": "Oil prices fall over 1% as supply glut concerns outweigh Middle East tensions",
+     "url": "https://news.google.com/rss/articles/CBMitAFBVV95cUxQdy1IYzhCdWlCV255SlRaMGNqX0UtbjAwNlE0ZmJoeUZjdnI0cGlBclViREZRZjktXzZ6Z09FVkNkRG5XbUV2SHBidDRBZjU1ZERabV85TG1FYS0xbTVhSzh3SEY5WDFFeEVjaGZJbGRvSi0ydWpSSGRkc09OZGN1MmUtVC1KV2NQOVplcmZqQXBzeHpxZ0dsU2F6dXVObTRsa1h4bFNaQ3pLZDdFQmJKSHNBWUU?oc=5",
+     "publisher": "Hiru News"
+    },
+    {
+     "title": "Oil Falls as Supply Glut Concerns Overshadow Hormuz Shipping Risks",
+     "url": "https://news.google.com/rss/articles/CBMihwFBVV95cUxNZzVZWmR3RHc0M1dyMGtCYzZTSVNMUE5vUVNNeUN6SkVBWE51aGplN0hlUkJMLVEwMS13M2E5MFJZT2o2SUh6ejl6cDhvVjVSUURPaXgtNlR0bE9wdEVrRWJ2bEFJbW5GM3hTTE5nN1dWQjAwU2dZRF8xa0xObENSRUswVmVQZ00?oc=5",
+     "publisher": "Marine News Magazine"
+    }
+   ],
+   "industries": {
+    "oil_gas": [
+     0.5,
+     "Oil marketing margins improve; upstream producers earn less (mixed)."
+    ],
+    "chemicals": [
+     0.5,
+     "Crude-linked feedstock gets cheaper (paints, specialty chemicals)."
+    ],
+    "auto": [
+     0.5,
+     "Lower fuel costs support demand; tyre makers' raw materials ease."
+    ]
+   }
+  },
+  {
+   "title": "Carmakers announce price hikes from December",
+   "detail": "Maruti Suzuki, Hyundai, Tata Motors, Mahindra and Audi raise prices on input costs: pricing power, but a risk to volumes if rates rise.",
+   "sources": [
+    {
+     "title": "Tata Motors join Maruti Suzuki, Hyundai, Audi in announcing price hikes- How much will you pay from December?",
+     "url": "https://news.google.com/rss/articles/CBMi9wFBVV95cUxOS0lhLW9zS01EUHB3ZjdlcHFsd2hfTzdsRWNJUlU4TDRVYUV6a2hUNlhPSTZLM0hGOXVvMEpla0s4NXhFVHJVMTROLTRIa1hQdnRBN0o4ZGRyM213MGxQWUw5WU5NVlVrS280UW1obU9VMzRHX3NqN2NFTjdjRFI1MnRNcV9aVS1Ddy1SSDdiQzVJZ3Q2WW5LVmFVTWJWN09pV3RrNDZkN2FWNkc3bVNWYjEzRWJTS3QzQVBJNUxPNUtFTmpGSWVyeFhfNWhGd3JFcHliYjhfWjlWRkV3c1hoTk5lYVZmbjVhaU95NEFMZlphSnIyZThJ0gH3AUFVX3lxTE5LSWEtb3NLTURQcHdmN2VwcWx3aF9PN2xFY0lSVThMNFVhRXpraFQ2WE9JNkszSEY5dW8wSmVrSzg1eEVUclUxNE4tNEhrWFB2dEE3SjhkZHIzbXcwbFBZTDlZTk1WVWtLbzRRbWhtT1UzNEdfc2o3Y0VON2NEUjUydE1xX1pVLUN3LVJIN2JDNUlndDZZbktWYVVNYlY3T2lXdGs0NmQ3YVY2RzdtU1ZiMTNFYlNLdDNBUEk1TE81S0VOakZJZXJ4WF81aEZ3ckVweWJiOF9aOVZGRXdzWGhOTmVhVmZuNWFpT3k0QUxmWmFKcjJlOEk?oc=5",
+     "publisher": "Livemint"
+    },
+    {
+     "title": "Car Prices Are Climbing Again Before Year-End: Maruti, Hyundai, Tata, Audi and Mahindra Explained",
+     "url": "https://news.google.com/rss/articles/CBMixAFBVV95cUxQWXdsaTNlMzFhUFJXUWRqSkxFeVNLeFFldjVVWGxTRXppNU5EMkpxRTR5X3pkZnljWWV6TUJsc1JNa3lLa2RFZjg1c2xLTklqbko4SGRXdmlJR0JTUmcyZlBXLWItMzlJUzJlSHR6S1liaGZMOFFLaVNxaS13blMyRDZHUERtY2tQYV92THJoTm5tcFZaSlkwSFkxRDQ4SmFRNTVtVHFZMkJKVUpSOGx1ZGUyeGpKcVowT0IxM25lMDBsYmZQ?oc=5",
+     "publisher": "Smartprix"
+    }
+   ],
+   "industries": {
+    "auto": [
+     0.5,
+     "Price increases pass input costs on to buyers."
+    ]
+   }
+  },
+  {
+   "title": "Nasdaq −4% on an AI selloff after the US tariff proposals",
+   "detail": "Global risk-off may weigh on Indian markets at tomorrow's open (GIFT Nifty −0.5%). Indian IT rallied today as an 'anti-AI' trade; its direction tomorrow is uncertain.",
+   "sources": [
+    {
+     "title": "Nasdaq slides 4% as AI selloff, tariff proposals rattle Wall St",
+     "url": "https://news.google.com/rss/articles/CBMiugFBVV95cUxNdUdBTGhVT2V5cDcydUZMX2NTdTkxVDBJSHdCMUgwNXBibGhQc28zdktpLXA2dGVUYzRzV3hpMld1U29KempSNUswd2dNYVdITlFxV2NycEkwbnlpZkdPSDNicVRKM3NCU2l0M0hoWU13UTZkbTAtX2JFempxaUtFbjdTZGMxT2lXM2g3dkR4cy1UYnVfZ09kOWpTNGxtUEZZOTRPaXhENlZ6OGt2ZF94d0RCVjdOSldfc0E?oc=5",
+     "publisher": "Reuters"
+    },
+    {
+     "title": "Nasdaq slides 4% as AI sell-off, tariff proposals rattle Wall Street",
+     "url": "https://news.google.com/rss/articles/CBMi0wFBVV95cUxOMFBTUXd4bDIwWFZoOTZNMUR3UmxVTjRUaW9Vc1hNZkNrc0FjUG1uRlNuTGtNTDY1Y0w2X0FDcjNpMnk4ZV9sZXFGUkN2Y0h4RzdoYXdkLWgzbFBWeDNjR1h0cUFlZ0x4ZXROTnI4ekE2WWxONi1xU2x3REdJd0pBY21oU3EyQUxCbUpJUUlkTHNab0ZUWktRbkEwcmNub3E4REpVT0VhX2FnYWxzREE2Snhvd2NMV2w3YkNGYVhTZDNST01XdzAtb0lNQ096SDlaZmFN?oc=5",
+     "publisher": "The Business Times"
+    },
+    {
+     "title": "IT Stocks Rally Despite Global AI Selloff: Infosys, TCS Lead Gains",
+     "url": "https://news.google.com/rss/articles/CBMif0FVX3lxTFB2VF83Skl3YW53a3c1cG1hbk1YU0xvTnI4QWVGb1daSUNVQ1Y0S2UyZm9XQmR2cC1JNlNBZFJhYkZZbDlObWJfYUVZeTd5cGF6R3JLVkhhZmVnZExURlFENE94RGFJZEpaN3FpcktFQzZRT19SWFJjMDNZN2FJSXM?oc=5",
+     "publisher": "NiftyTrader"
+    }
+   ],
+   "industries": {}
+  }
+ ],
+ "stocks": {
+  "TATASTEEL": [
+   -2,
+   "Backlash over its ₹32,266 crore deal to buy 52.38% of APL Apollo Tubes; shares at a 52-week low; management says it is open to restructuring the deal.",
+   [
+    {
+     "title": "Tata Steel-APL Apollo deal under SEBI lens",
+     "url": "https://news.google.com/rss/articles/CBMipAFBVV95cUxOenA0ZkRlQVdUenNmYktTa0tQOHVMazZPVFkybFZlUE1GaTBVamdKUlBqVy05UUdWUGtkbjVpNDJDMU1hQXFfbVpvTlIxYmp6VU9EcGRoTktmbVpybF9BaWNzZWZUbXBQbGRNRWg1TExJdGRrNGQ5MW9UTEVORWV2YzhJQkxLNzQxVExIaGJkbHdPVTN3R0FVdWg4VHBQX1lwZVZmY9IBqwFBVV95cUxNcElrcVJqVTBmRmFJQmtTdFQzM0J1clVnTnZjanBsd2hTQ3ViblJjUEFrOUkzd2Z0bUhNa1VWalhwc3dfV3hZcmQxbF92alZ6RDFyOURkbnZUcVRHbVJNLUN5RjhDdVp4SHo0SjFCWnpQcXNxQVlJVGxLclNaRWpRREN2dThFbWZfc2dNblc5RTUtLU1RMEFsSGVXVU1VSW0yZm12RzZTRUoxalE?oc=5",
+     "publisher": "The Financial Express"
+    },
+    {
+     "title": "Tata Steel open to revisiting APL Apollo deal structure after investor backlash",
+     "url": "https://news.google.com/rss/articles/CBMi1gFBVV95cUxQV0FrVWxpb2l4cURWOGdxMS1JWjZzal9fY2pNVmljWDYwWjQzOGRhNHl0M3k3d2NsZGZNYmNKcm5LZjRsbmMxVnBobjdsdzJUVFpObFZrV3JZcldBWldzVFpXNmhfeFlqdloyM0o3RE9lSXdWVjI1Uk9HUktWdFBKeVlCYVhkOXZucU5lRnRaYTFHM0lEZU5PckdNeUw3ejd1NEljeVduY05HWHhDdGNoNENQWFVORzdXQlFpb1J1cWFUT3FHVE5HazFOeHM5a3R0aDR5RFh30gHbAUFVX3lxTE1nS2hYbE5LV2Y4SXRZaGRTU1BVS3JnUzM3WFBwN1d4MS1PNmxxVG5sVGF4dVlqTDlHM2ptZjYtLVBjM1RxYlVlczRfUWxRM3N3SEltR1VGSW5jR2pnQWJWSWFFWVVaSUZXblJDcTdfQTlCWERzVVo2VjBXZEc1blVEc1Q3QXlKaUtJSEh1aWRCUTlRR1E5Vl9iMXJxeHhqbzBKazlZdDQzWnprRnVmOVQ1U0NQeS1fTThjTHFNS1Q0RkdBTG5JTEFfVXdnc2plQklZeEpyOC10SEFHTQ?oc=5",
+     "publisher": "Livemint"
+    }
+   ]
+  ],
+  "APLAPOLLO": [
+   -2,
+   "Fell about 15% to a 52-week low after at least four broker downgrades on the Tata Steel deal; deal terms may be restructured.",
+   [
+    {
+     "title": "Tata Steel-APL Apollo deal under SEBI lens",
+     "url": "https://news.google.com/rss/articles/CBMipAFBVV95cUxOenA0ZkRlQVdUenNmYktTa0tQOHVMazZPVFkybFZlUE1GaTBVamdKUlBqVy05UUdWUGtkbjVpNDJDMU1hQXFfbVpvTlIxYmp6VU9EcGRoTktmbVpybF9BaWNzZWZUbXBQbGRNRWg1TExJdGRrNGQ5MW9UTEVORWV2YzhJQkxLNzQxVExIaGJkbHdPVTN3R0FVdWg4VHBQX1lwZVZmY9IBqwFBVV95cUxNcElrcVJqVTBmRmFJQmtTdFQzM0J1clVnTnZjanBsd2hTQ3ViblJjUEFrOUkzd2Z0bUhNa1VWalhwc3dfV3hZcmQxbF92alZ6RDFyOURkbnZUcVRHbVJNLUN5RjhDdVp4SHo0SjFCWnpQcXNxQVlJVGxLclNaRWpRREN2dThFbWZfc2dNblc5RTUtLU1RMEFsSGVXVU1VSW0yZm12RzZTRUoxalE?oc=5",
+     "publisher": "The Financial Express"
+    },
+    {
+     "title": "Tata Steel open to revisiting APL Apollo deal structure after investor backlash",
+     "url": "https://news.google.com/rss/articles/CBMi1gFBVV95cUxQV0FrVWxpb2l4cURWOGdxMS1JWjZzal9fY2pNVmljWDYwWjQzOGRhNHl0M3k3d2NsZGZNYmNKcm5LZjRsbmMxVnBobjdsdzJUVFpObFZrV3JZcldBWldzVFpXNmhfeFlqdloyM0o3RE9lSXdWVjI1Uk9HUktWdFBKeVlCYVhkOXZucU5lRnRaYTFHM0lEZU5PckdNeUw3ejd1NEljeVduY05HWHhDdGNoNENQWFVORzdXQlFpb1J1cWFUT3FHVE5HazFOeHM5a3R0aDR5RFh30gHbAUFVX3lxTE1nS2hYbE5LV2Y4SXRZaGRTU1BVS3JnUzM3WFBwN1d4MS1PNmxxVG5sVGF4dVlqTDlHM2ptZjYtLVBjM1RxYlVlczRfUWxRM3N3SEltR1VGSW5jR2pnQWJWSWFFWVVaSUZXblJDcTdfQTlCWERzVVo2VjBXZEc1blVEc1Q3QXlKaUtJSEh1aWRCUTlRR1E5Vl9iMXJxeHhqbzBKazlZdDQzWnprRnVmOVQ1U0NQeS1fTThjTHFNS1Q0RkdBTG5JTEFfVXdnc2plQklZeEpyOC10SEFHTQ?oc=5",
+     "publisher": "Livemint"
+    }
+   ]
+  ],
+  "SGMART": [
+   -2,
+   "Hit its 20% lower circuit as the Tata Steel–APL Apollo deal unsettled the group.",
+   []
+  ],
+  "SGFIN": [
+   -2,
+   "Hit its 20% lower circuit on the APL Apollo news.",
+   []
+  ],
+  "JWL": [
+   1,
+   "80:20 joint venture with Korea's Woojin for metro coaches; shares hit the 20% upper circuit (already priced in fast).",
+   [
+    {
+     "title": "Jupiter Wagons and Korea’s Woojin sign pact for 80:20 metro coach venture",
+     "url": "https://news.google.com/rss/articles/CBMioAFBVV95cUxNV1hYY0JtOG9jUHowc2Y0MUZ3d3lPSzk0amVTUldOeGtUX05wX1pNYUtxajFuVk5QOVJlWFdORFd1aTd5UnZlSUFYdDdkTEJ4MENyVHlpSEhielJxTWFmc1pJLXE0bDdNUExVY25wb1M2SEZha2htdmxramZRV1FuSWlBYkJodVRnRjJQanpYQWpoclhTLWFINFlYRXh6RmFI?oc=5",
+     "publisher": "Railway Supply"
+    },
+    {
+     "title": "Jupiter Wagons Plans India Metro Coach Joint Venture",
+     "url": "https://news.google.com/rss/articles/CBMiogFBVV95cUxPNFlGMUgwOTAxckNKcGc1ZC1QbXg5VkppNkhnSy1fNG5SV181Z3A3akIybG5LV1RBamRCNkN4cGZJSWQ2aXRoNXctTlA3TFZQdjNzaUZXMHBCZHhGY0NRWGJyRkVPWUZpalVSTnZzcFNBb0dFNmFoMndCdTA4Mjl3eVNkWHV0d0NqWVRpNEdESXVnY09fOWM4S0VSMGg3Sm9CVUE?oc=5",
+     "publisher": "Urban Acres"
+    }
+   ]
+  ],
+  "LUPIN": [
+   1,
+   "US FDA approvals for generic Janumet (diabetes) and ferric citrate tablets.",
+   [
+    {
+     "title": "Lupin Receives Approval from U.S. FDA for Sitagliptin and Metformin Hydrochloride Tablets, in the United States",
+     "url": "https://news.google.com/rss/articles/CBMihAFBVV95cUxPdUNiX3JEWWF3Z3dMSDIxeG5Za0g5QzFiTzJzZXJFOVFwUUdSNjZ1VHhzRWFRb2pVOEVhQ2pRdEJnVDlKaU1wLWgyNEstWGhYNjEtU0dQeVIzOGRub3Q0bU5PbUg2X1hZbm9yNDZXQ2ZZdWVJanQxc3VCaHczdVlWT0wyU2g?oc=5",
+     "publisher": "Yahoo! Finance Canada"
+    },
+    {
+     "title": "Lupin gets US FDA nod for generic type 2 diabetes drug Janumet in two strengths - CNBC TV18",
+     "url": "https://news.google.com/rss/articles/CBMitgFBVV95cUxQcGlVTVI4M0g1UVZ2MEZUQ2gyRkNJZmJFLTBrRTNhQnduOWNSNlpycElMQ1lHd21LQm0wRFdmeE5ieml3ZUVic0pGV0xYQTlQaGFubU5TdGhfZzBZdVRYSUVGR3ZEMTJIY2ZtNGl5c0IwSEVsMjdZQ0QxVnpyZWFvR190NlM0UUE3QUhDQi1veWlESzkxTkRaUGFOcVlHTUlVOUxYbjhmZ2dvcWdWMXZYcGxUM3Y3Zw?oc=5",
+     "publisher": "LinkedIn"
+    }
+   ]
+  ],
+  "SCHAEFFLER": [
+   -1,
+   "Parent Schaeffler AG plans to sell about 6% in a ₹3,188 crore block deal at a ₹3,400 floor on Thursday: a supply overhang near that price.",
+   [
+    {
+     "title": "Schaeffler India Shares in Focus as Schaeffler AG Plans ₹3,188 Crore Block Deal at ₹3,400 Per Share",
+     "url": "https://news.google.com/rss/articles/CBMinwFBVV95cUxONGJBSFYzeTg1dGpxSjNCUHR3b2FtSWo2TmE2d2tCR2VEYzkwQXIyR0VpNmY2NV8tODN5eFRVeFctVG9WMHE1eUpnUVRiZG9FWHJFcms2SFFMMDc4NGhqMk1xUnhUVDRvT0dvM1VvTjdrRkk0WlFXOHhLT0JJYW9LdVJKWXZVQm4ybEV3MmVQeXNjdDVGM1pUQjZPY0dhQUk?oc=5",
+     "publisher": "Kotak Neo"
+    },
+    {
+     "title": "​Schaeffler India Block Deal: Promoters likely to sell 6% stake for Rs 3,188 crore on Thursday",
+     "url": "https://news.google.com/rss/articles/CBMi2AFBVV95cUxQUDBTTUZXaU5jZFhXRnhaTjQxZVhYcmFaQ3VSWEtTcUV1SzB1LWwwN2YwNkZsU0hYRlgxTzZqQ0NkWVlkYUt6LVJWRHFseFRaQXAyYTFHc0pxY0hGd1E5d3NXU3ZuNGRNRHNmbHJFRkV5VWRQQzJFcnlCNkxIdHlJc1pyZThDMVRlN1k1cER1a1NlT0JEbFJQemlHTmRpakktWVNobTZrVXc5SnJuNFBjM1NCRzhBRlNFeTg1dkxiVlRYOG95SmJyWnJUanFRWTg5cmMtUjRpMmM?oc=5",
+     "publisher": "Zee Business"
+    }
+   ]
+  ],
+  "LGEINDIA": [
+   -1,
+   "Promoter plans to sell up to 2% (13.57 million shares) by 31 December: supply overhang.",
+   [
+    {
+     "title": "Schaeffler India Shares in Focus as Schaeffler AG Plans ₹3,188 Crore Block Deal at ₹3,400 Per Share",
+     "url": "https://news.google.com/rss/articles/CBMinwFBVV95cUxONGJBSFYzeTg1dGpxSjNCUHR3b2FtSWo2TmE2d2tCR2VEYzkwQXIyR0VpNmY2NV8tODN5eFRVeFctVG9WMHE1eUpnUVRiZG9FWHJFcms2SFFMMDc4NGhqMk1xUnhUVDRvT0dvM1VvTjdrRkk0WlFXOHhLT0JJYW9LdVJKWXZVQm4ybEV3MmVQeXNjdDVGM1pUQjZPY0dhQUk?oc=5",
+     "publisher": "Kotak Neo"
+    }
+   ]
+  ],
+  "ABB": [
+   0.5,
+   "Parent ABB to buy Germany's Ziehl-Abegg ($2.65 billion EV); limited direct effect on ABB India.",
+   [
+    {
+     "title": "ABB India Transaction Agreement and Corporate Structure",
+     "url": "https://news.google.com/rss/articles/CBMizAFBVV95cUxQNVZiUmVpUHl2YzJCSHZVV0JteDlGbVJ6MGp1UXZCSjkzdDFuV1Z4dXRDZUFIWUxPZVBJdXNkaW1ITEJXNGQ4M09PdHlTWkVJR2oyM2NxYUdOMnNQZ05wNm5HNW1iVEZTNEJ3OUt6cGRnS0doNGN0S3owRVdmTlFTRGdNcnRoLUx1N1FreThpNzhZWnA3eHUwNFRwX09KcEZYSEtNX1Uxd1VDQlU5YldJeklPRFZzYUdnVDNtd0hmZWdYX3pCeEJfQjI4TmQ?oc=5",
+     "publisher": "Kalkine India"
+    }
+   ]
+  ],
+  "MARUTI": [
+   0.5,
+   "Price hike from December.",
+   []
+  ],
+  "HYUNDAI": [
+   0.5,
+   "Price hike from December.",
+   []
+  ],
+  "TMPV": [
+   0.5,
+   "Price hike from December.",
+   []
+  ],
+  "M&M": [
+   0.5,
+   "Price hike from December.",
+   []
+  ]
+ }
+}

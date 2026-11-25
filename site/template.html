@@ -112,6 +112,7 @@ footer { font-size: 12px; color: var(--muted); padding-block: 0 30px }
 <header class="top"><div class="wrap">
   <a class="brand" href="#market">Stock Picker Portal</a>
   <nav class="tabs" aria-label="Sections">
+    <a href="#today" data-tab="today">Today</a>
     <a href="#market" data-tab="market">Market</a>
     <a href="#investing" data-tab="investing">Investing</a>
     <a href="#industries" data-tab="industries">Industries</a>
@@ -164,9 +165,9 @@ function spark(points, w = 96, h = 26) {
 }
 
 // ---------- routing
-const routes = { market: renderMarket, investing: renderInvesting, industries: renderIndustries, economy: renderEconomy, trading: renderTrading };
+const routes = { today: renderToday, market: renderMarket, investing: renderInvesting, industries: renderIndustries, economy: renderEconomy, trading: renderTrading };
 function route() {
-  const h = location.hash.slice(1) || "market";
+  const h = location.hash.slice(1) || "today";
   document.querySelectorAll("nav.tabs a").forEach((a) => a.toggleAttribute("aria-current", false));
   const tab = h.startsWith("stock-") ? "market" : h.startsWith("industry-") ? "industries" : h;
   const cur = document.querySelector(`nav.tabs a[data-tab="${tab}"]`); if (cur) cur.setAttribute("aria-current", "page");
@@ -178,6 +179,44 @@ function route() {
 }
 window.addEventListener("hashchange", route);
 const app = () => document.getElementById("app");
+
+
+// ---------- today's brief: news priced in + fundamentals + technicals (page database: brief/today)
+let BRIEF = undefined;
+async function loadBrief() {
+  if (BRIEF !== undefined) return BRIEF;
+  await caps; if (!DB) return (BRIEF = null);
+  try { const d = await DB.doc("brief/today").get(); BRIEF = d.exists ? (d.data().z ? await unz(d.data().z) : d.data()) : null; } catch (e) { BRIEF = null; }
+  return BRIEF;
+}
+const IND_LABEL = (id) => ((S.industries[(id || "").replace(/_/g, "-")] || {}).label || id || "—");
+function briefTable(list, kind) {
+  if (!list.length) return `<p class="small">Nothing passes this screen today.</p>`;
+  return `<div class="scroll"><table style="min-width:1100px"><thead><tr><th>Company</th><th class="num">Price</th><th class="num">Overall</th><th class="num">Fundamentals</th><th class="num">Technicals</th><th class="num">Today's news</th><th>Key indicators</th><th>Chart</th><th>Why it is here · what is against it</th></tr></thead><tbody>${
+    list.map((x) => { const i = x.ind || {}, a = i.adx || {};
+      const news = (x.news_items || []).map((n) => `<li class="${n.impact > 0 ? "up" : n.impact < 0 ? "down" : ""}">${n.impact > 0 ? "+" : ""}${n.impact} ${esc(n.why)}</li>`).join("");
+      return `<tr><td><div class="name"><a href="#stock-${esc(x.isin)}">${esc(x.symbol)}</a></div><div class="co">${esc(x.name || "")}</div><div class="tiny">${esc(IND_LABEL(x.industry))} · ₹${fx(x.turnover_cr, 0)} Cr traded</div></td>
+        <td class="num">₹${price(x.price)}<div class="tiny ${cls(x.change_pct)}">${pct(x.change_pct)}</div></td><td class="num"><b>${x.combined ?? "—"}</b></td>
+        <td class="num">${x.fund ?? "—"} <span class="pill ${gradeCls(x.grade)}">${esc(x.grade || "—")}</span><div class="tiny">${x.piotroski != null ? `Piotroski ${x.piotroski}/9` : ""}${x.mf_rank ? ` · MF #${x.mf_rank}` : ""}</div></td>
+        <td class="num">${x.tech ?? "—"}</td><td class="num">${x.news}</td>
+        <td class="tiny" style="min-width:150px">${i.rsi != null ? `RSI ${Math.round(i.rsi)}` : ""}${a.adx != null ? ` · ADX ${a.adx} (${a.plus_di > a.minus_di ? "buyers" : "sellers"})` : ""}${i.rs_3m != null ? `<br>vs Nifty 3m ${i.rs_3m > 0 ? "+" : ""}${i.rs_3m}` : ""}${i.extended_atr != null ? ` · ${i.extended_atr} ATR from 50-day` : ""}${i.support ? `<br>Support ₹${price(i.support)}` : ""}${i.resistance ? ` · Resist ₹${price(i.resistance)}` : ""}${i.squeeze ? "<br>Bollinger squeeze" : ""}</td>
+        <td class="tiny" style="min-width:150px">${esc(x.dow || "—")}${x.dow_break ? `<br><b>${esc(x.dow_break)}</b>` : ""}${(x.patterns || []).map((p) => `<br>${esc(p.pattern)}: ${esc(p.status.split(" (")[0])} @ ₹${price(p.breakout)}`).join("")}</td>
+        <td class="small" style="min-width:260px">${news ? `<ul style="margin:0;padding-left:16px">${news}</ul>` : ""}${(x.tech_for || []).length ? `<div class="tiny up">${x.tech_for.map(esc).join("; ")}</div>` : ""}${(x.tech_against || []).length ? `<div class="tiny down">${x.tech_against.map(esc).join("; ")}</div>` : ""}${x.valuation ? `<div class="tiny">${esc(x.valuation)}</div>` : ""}${x.cycle ? `<div class="tiny">Cycle: ${esc(x.cycle)}</div>` : ""}${(x.flags || []).map((f) => `<div class="tiny down">${esc(f)}</div>`).join("")}</td></tr>`; }).join("")}</tbody></table></div>`;
+}
+async function renderToday() {
+  app().innerHTML = `<div><h1>Today</h1><p class="sub">The day's market-moving news priced into industries and companies, combined with each company's fundamentals and its important technical indicators.</p></div><div id="today-body"><p class="loading">Loading today's brief…</p></div>`;
+  const b = await loadBrief(), el = document.getElementById("today-body"); if (!el) return;
+  if (!b) { el.innerHTML = `<p class="notice">Today's brief is read from this page's database: open the page on claude.ai while signed in. It is prepared before the market opens and after it closes on trading days.</p>`; return; }
+  const src = (s) => (s || []).map((x) => { const u = safeUrl(x.url); return u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(x.publisher || x.title)}</a>` : esc(x.publisher || ""); }).join(" · ");
+  el.innerHTML = `<section class="verdict"><div class="eyebrow">Market brief · ${esc(b.date)} · prepared ${ago(b.generated_at)}</div><p>${esc(b.summary)}</p></section>
+    <section class="panel"><h2>What happened and what it means</h2>${b.events.map((e) => `<details class="sec" open><summary>${esc(e.title)}</summary><p class="small">${esc(e.detail)}</p>
+      ${Object.keys(e.industries || {}).length ? `<ul class="small">${Object.entries(e.industries).map(([k, [v, w]]) => `<li class="${v > 0 ? "up" : v < 0 ? "down" : ""}"><b>${esc(IND_LABEL(k))}</b> ${v > 0 ? "+" : ""}${v}: ${esc(w)}</li>`).join("")}</ul>` : ""}<p class="tiny">Sources: ${src(e.sources)}</p></details>`).join("")}
+      <p class="tiny">Impact scale −2 (clearly hurts earnings or demand) to +2 (clearly helps), judged from the news; tariff effects apply only to companies whose business description mentions exports or US customers.</p></section>
+    <section class="panel"><h2>Investing: strongest fundamentals, news not against them</h2><p class="sub">Ranked mainly on the fundamental scorecard (quality incl. Piotroski, value on the industry's methods, growth, ownership, economy), adjusted for today's news; the chart columns show timing context.</p>${briefTable(b.investing, "inv")}</section>
+    <section class="panel"><h2>Trading: strongest charts, fundamentals not weak</h2><p class="sub">Ranked mainly on trend (50/200-day averages, ADX, Supertrend, Dow structure), momentum (RSI, MACD, strength vs the Nifty) and volume, excluding stocks stretched more than 4 ATRs above their 50-day average.</p>${briefTable(b.trading, "trd")}</section>
+    <section class="panel"><h2>Caution: news or chart turned against them</h2>${briefTable(b.caution, "cau")}</section>
+    <p class="tiny">${esc(b.method)} ${esc(b.label)} Scored ${b.universe} liquid stocks; prices as of ${esc(JSON.stringify(b.prices_as_of))}.</p>`;
+}
 
 // ---------- market
 function renderMarket() {
