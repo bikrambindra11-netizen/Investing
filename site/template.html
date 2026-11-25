@@ -112,7 +112,6 @@ footer { font-size: 12px; color: var(--muted); padding-block: 0 30px }
 <header class="top"><div class="wrap">
   <a class="brand" href="#market">Stock Picker Portal</a>
   <nav class="tabs" aria-label="Sections">
-    <a href="#today" data-tab="today">Today</a>
     <a href="#market" data-tab="market">Market</a>
     <a href="#investing" data-tab="investing">Investing</a>
     <a href="#industries" data-tab="industries">Industries</a>
@@ -165,9 +164,9 @@ function spark(points, w = 96, h = 26) {
 }
 
 // ---------- routing
-const routes = { today: renderToday, market: renderMarket, investing: renderInvesting, industries: renderIndustries, economy: renderEconomy, trading: renderTrading };
+const routes = { market: renderMarket, investing: renderInvesting, industries: renderIndustries, economy: renderEconomy, trading: renderTrading };
 function route() {
-  const h = location.hash.slice(1) || "today";
+  const h = location.hash.slice(1) || "market";
   document.querySelectorAll("nav.tabs a").forEach((a) => a.toggleAttribute("aria-current", false));
   const tab = h.startsWith("stock-") ? "market" : h.startsWith("industry-") ? "industries" : h;
   const cur = document.querySelector(`nav.tabs a[data-tab="${tab}"]`); if (cur) cur.setAttribute("aria-current", "page");
@@ -181,43 +180,45 @@ window.addEventListener("hashchange", route);
 const app = () => document.getElementById("app");
 
 
-// ---------- today's brief: news priced in + fundamentals + technicals (page database: brief/today)
-let BRIEF = undefined;
-async function loadBrief() {
-  if (BRIEF !== undefined) return BRIEF;
-  await caps; if (!DB) return (BRIEF = null);
-  try { const d = await DB.doc("brief/today").get(); BRIEF = d.exists ? (d.data().z ? await unz(d.data().z) : d.data()) : null; } catch (e) { BRIEF = null; }
-  return BRIEF;
+// ---------- live news, priced into every stock (page database: news/live + news/a0..)
+let NEWS = undefined;
+async function loadNews() {
+  if (NEWS !== undefined) return NEWS;
+  await caps; if (!DB) return (NEWS = null);
+  NEWS = (async () => {
+    try {
+      const d = await DB.doc("news/live").get(); if (!d.exists) return null;
+      const head = await unz(d.data().z), parts = d.data().parts || 0;
+      const maps = await Promise.all(Array.from({ length: parts }, (_, k) => DB.doc("news/a" + k).get().then((x) => (x.exists ? unz(x.data().z) : {}))));
+      head.all = Object.assign({}, ...maps); return head;
+    } catch (e) { return null; }
+  })();
+  return NEWS;
 }
 const IND_LABEL = (id) => ((S.industries[(id || "").replace(/_/g, "-")] || {}).label || id || "—");
-function briefTable(list, kind) {
-  if (!list.length) return `<p class="small">Nothing passes this screen today.</p>`;
-  return `<div class="scroll"><table style="min-width:1100px"><thead><tr><th>Company</th><th class="num">Price</th><th class="num">Overall</th><th class="num">Fundamentals</th><th class="num">Technicals</th><th class="num">Today's news</th><th>Key indicators</th><th>Chart</th><th>Why it is here · what is against it</th></tr></thead><tbody>${
-    list.map((x) => { const i = x.ind || {}, a = i.adx || {};
-      const news = (x.news_items || []).map((n) => `<li class="${n.impact > 0 ? "up" : n.impact < 0 ? "down" : ""}">${n.impact > 0 ? "+" : ""}${n.impact} ${esc(n.why)}</li>`).join("");
-      return `<tr><td><div class="name"><a href="#stock-${esc(x.isin)}">${esc(x.symbol)}</a></div><div class="co">${esc(x.name || "")}</div><div class="tiny">${esc(IND_LABEL(x.industry))} · ₹${fx(x.turnover_cr, 0)} Cr traded</div></td>
-        <td class="num">₹${price(x.price)}<div class="tiny ${cls(x.change_pct)}">${pct(x.change_pct)}</div></td><td class="num"><b>${x.combined ?? "—"}</b></td>
-        <td class="num">${x.fund ?? "—"} <span class="pill ${gradeCls(x.grade)}">${esc(x.grade || "—")}</span><div class="tiny">${x.piotroski != null ? `Piotroski ${x.piotroski}/9` : ""}${x.mf_rank ? ` · MF #${x.mf_rank}` : ""}</div></td>
-        <td class="num">${x.tech ?? "—"}</td><td class="num">${x.news}</td>
-        <td class="tiny" style="min-width:150px">${i.rsi != null ? `RSI ${Math.round(i.rsi)}` : ""}${a.adx != null ? ` · ADX ${a.adx} (${a.plus_di > a.minus_di ? "buyers" : "sellers"})` : ""}${i.rs_3m != null ? `<br>vs Nifty 3m ${i.rs_3m > 0 ? "+" : ""}${i.rs_3m}` : ""}${i.extended_atr != null ? ` · ${i.extended_atr} ATR from 50-day` : ""}${i.support ? `<br>Support ₹${price(i.support)}` : ""}${i.resistance ? ` · Resist ₹${price(i.resistance)}` : ""}${i.squeeze ? "<br>Bollinger squeeze" : ""}</td>
-        <td class="tiny" style="min-width:150px">${esc(x.dow || "—")}${x.dow_break ? `<br><b>${esc(x.dow_break)}</b>` : ""}${(x.patterns || []).map((p) => `<br>${esc(p.pattern)}: ${esc(p.status.split(" (")[0])} @ ₹${price(p.breakout)}`).join("")}</td>
-        <td class="small" style="min-width:260px">${news ? `<ul style="margin:0;padding-left:16px">${news}</ul>` : ""}${(x.tech_for || []).length ? `<div class="tiny up">${x.tech_for.map(esc).join("; ")}</div>` : ""}${(x.tech_against || []).length ? `<div class="tiny down">${x.tech_against.map(esc).join("; ")}</div>` : ""}${x.valuation ? `<div class="tiny">${esc(x.valuation)}</div>` : ""}${x.cycle ? `<div class="tiny">Cycle: ${esc(x.cycle)}</div>` : ""}${(x.flags || []).map((f) => `<div class="tiny down">${esc(f)}</div>`).join("")}</td></tr>`; }).join("")}</tbody></table></div>`;
+const nsrc = (s) => (s || []).map((x) => { const u = safeUrl(x.url); return u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(x.publisher || x.title)}</a>` : esc(x.publisher || ""); }).join(" · ");
+function newsEventsBlock(n, onlyInd) {
+  const evs = n.events.filter((e) => !onlyInd || (e.industries || {})[onlyInd]);
+  if (!evs.length) return `<p class="small">No news today that changes the picture for this industry.</p>`;
+  return evs.map((e) => `<details class="sec" ${onlyInd ? "open" : ""}><summary>${esc(e.title)}</summary><p class="small">${esc(e.detail)}</p>
+    ${Object.keys(e.industries || {}).length ? `<ul class="small">${Object.entries(e.industries).filter(([k]) => !onlyInd || k === onlyInd).map(([k, v]) => `<li class="${v[0] > 0 ? "up" : v[0] < 0 ? "down" : ""}"><b>${esc(IND_LABEL(k))}</b> ${v[0] > 0 ? "+" : ""}${v[0]}: ${esc(v[1])}${v[2] != null ? ` (earnings ${v[2] > 0 ? "+" : ""}${v[2]}%)` : ""}</li>`).join("")}</ul>` : ""}
+    <p class="tiny">Sources: ${nsrc(e.sources)}</p></details>`).join("");
 }
-async function renderToday() {
-  app().innerHTML = `<div><h1>Today</h1><p class="sub">The day's market-moving news priced into industries and companies, combined with each company's fundamentals and its important technical indicators.</p></div><div id="today-body"><p class="loading">Loading today's brief…</p></div>`;
-  const b = await loadBrief(), el = document.getElementById("today-body"); if (!el) return;
-  if (!b) { el.innerHTML = `<p class="notice">Today's brief is read from this page's database: open the page on claude.ai while signed in. It is prepared before the market opens and after it closes on trading days.</p>`; return; }
-  const src = (s) => (s || []).map((x) => { const u = safeUrl(x.url); return u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(x.publisher || x.title)}</a>` : esc(x.publisher || ""); }).join(" · ");
-  el.innerHTML = `<section class="verdict"><div class="eyebrow">Market brief · ${esc(b.date)} · prepared ${ago(b.generated_at)}</div><p>${esc(b.summary)}</p></section>
-    <section class="panel"><h2>What happened and what it means</h2>${b.events.map((e) => `<details class="sec" open><summary>${esc(e.title)}</summary><p class="small">${esc(e.detail)}</p>
-      ${Object.keys(e.industries || {}).length ? `<ul class="small">${Object.entries(e.industries).map(([k, [v, w]]) => `<li class="${v > 0 ? "up" : v < 0 ? "down" : ""}"><b>${esc(IND_LABEL(k))}</b> ${v > 0 ? "+" : ""}${v}: ${esc(w)}</li>`).join("")}</ul>` : ""}<p class="tiny">Sources: ${src(e.sources)}</p></details>`).join("")}
-      <p class="tiny">Impact scale −2 (clearly hurts earnings or demand) to +2 (clearly helps), judged from the news; tariff effects apply only to companies whose business description mentions exports or US customers.</p></section>
-    <section class="panel"><h2>Investing: strongest fundamentals, news not against them</h2><p class="sub">Ranked mainly on the fundamental scorecard (quality incl. Piotroski, value on the industry's methods, growth, ownership, economy), adjusted for today's news; the chart columns show timing context.</p>${briefTable(b.investing, "inv")}</section>
-    <section class="panel"><h2>Trading: strongest charts, fundamentals not weak</h2><p class="sub">Ranked mainly on trend (50/200-day averages, ADX, Supertrend, Dow structure), momentum (RSI, MACD, strength vs the Nifty) and volume, excluding stocks stretched more than 4 ATRs above their 50-day average.</p>${briefTable(b.trading, "trd")}</section>
-    <section class="panel"><h2>Caution: news or chart turned against them</h2>${briefTable(b.caution, "cau")}</section>
-    <p class="tiny">${esc(b.method)} ${esc(b.label)} Scored ${b.universe} liquid stocks; prices as of ${esc(JSON.stringify(b.prices_as_of))}.</p>`;
+// The news-adjusted picture for one stock: overall score = fundamentals 45% + chart 35% + today's news 20%
+function overallBlock(x, n, fc) {
+  if (!x) return "";
+  const [comb, f, t, nw, eps, items, pro, con, ind, dow, dbrk] = x, i = ind || {}, a = i.adx || {};
+  const tone = comb == null ? "" : comb >= 65 ? "positive" : comb < 45 ? "negative" : "";
+  const val = fc && fc.vm && fc.vm.methods ? fc.vm.methods.find((m) => m.role === "primary" && m.available && m.value) : null;
+  return `<section class="verdict ${tone}"><div class="eyebrow">Overall picture now · news as of ${ago(n.generated_at)}</div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:baseline"><p class="big" style="margin:0">Overall ${comb ?? "—"}/100</p>
+      <span class="small">Fundamentals ${f ?? "—"} · Chart ${t ?? "—"} · Today's news ${nw}</span></div>
+    ${items.length ? `<ul>${items.map(([v, w, ev]) => `<li class="${v > 0 ? "up" : v < 0 ? "down" : ""}"><b>${v > 0 ? "+" : ""}${v}</b> ${esc(w)} <span class="tiny">(${esc(ev)})</span></li>`).join("")}</ul>` : `<p class="small">No news today that changes the picture for this company or its industry.</p>`}
+    ${eps != null ? `<p class="small">Estimated effect of today's news on earnings: ${eps > 0 ? "+" : ""}${eps}%${val ? ` → ${esc(val.name)} value ₹${price(val.value * (1 + eps / 100))} after news (₹${price(val.value)} before)` : ""}.</p>` : ""}
+    <p class="small"><b>Chart:</b> ${esc(dow || "—")}${dbrk ? ` — <b>${esc(dbrk)}</b>` : ""}. ${i.rsi != null ? `RSI ${Math.round(i.rsi)}` : ""}${a.adx != null ? ` · ADX ${a.adx} (${a.plus_di > a.minus_di ? "buyers" : "sellers"} in control)` : ""}${i.rs_3m != null ? ` · vs Nifty over 3 months ${i.rs_3m > 0 ? "+" : ""}${i.rs_3m} pts` : ""}${i.extended_atr != null ? ` · ${i.extended_atr} ATRs from the 50-day average` : ""}${i.support ? ` · support ₹${price(i.support)}` : ""}${i.resistance ? ` · resistance ₹${price(i.resistance)}` : ""}${i.squeeze ? " · Bollinger squeeze" : ""}</p>
+    ${pro.length ? `<p class="tiny up">For: ${pro.map(esc).join("; ")}</p>` : ""}${con.length ? `<p class="tiny down">Against: ${con.map(esc).join("; ")}</p>` : ""}
+    <p class="tiny" style="margin:6px 0 0;font-weight:600">Screening output: fundamentals 45%, chart 35%, today's news 20%. Not investment advice.</p></section>`;
 }
-
 // ---------- market
 function renderMarket() {
   const rows = S.stocks;
@@ -234,6 +235,7 @@ function renderMarket() {
       <section class="panel movers"><h2>Top losers</h2><ol>${mv(liquid.slice(-5).reverse())}</ol></section>
     </div>
     <p class="tiny" style="margin:-6px 0 0">Gainers and losers: stocks with at least ₹1 crore traded in the last full session.</p>
+    <section class="panel" id="mkt-news"><h2>News moving prices now</h2><p class="tiny">Loading…</p></section>
     <section class="panel">
       <div class="controls">
         <input type="search" id="q" placeholder="Search by company, symbol or ISIN" value="${esc(view.q)}" aria-label="Search stocks">
@@ -255,6 +257,8 @@ function renderMarket() {
   document.querySelectorAll("th button").forEach((b) => b.addEventListener("click", () => {
     const k = b.dataset.k; view.desc = view.sort === k ? !view.desc : k !== "s"; view.sort = k; view.page = 0; drawTable();
   }));
+  loadNews().then((n) => { const el = document.getElementById("mkt-news"); if (!el) return;
+    el.innerHTML = n ? `<h2>News moving prices now</h2><p class="small">${esc(n.summary)}</p>${newsEventsBlock(n)}<p class="tiny">As of ${ago(n.generated_at)}. Already priced into every stock's overall score and the Investing ranking.</p>` : `<h2>News moving prices now</h2><p class="tiny">Open on claude.ai to load the news.</p>`; });
   document.getElementById("prev").addEventListener("click", () => { view.page--; drawTable(); });
   document.getElementById("next").addEventListener("click", () => { view.page++; drawTable(); });
   drawTable();
@@ -348,11 +352,7 @@ async function renderStock(isin) {
     <section class="panel" id="scorecard"><p class="tiny">Loading fundamental scorecard…</p></section>
     <section class="live-box" id="live"><div class="live-head"><div><h2>Live analysis</h2><p class="sub">Claude collects fresh prices, financials, the option chain, news and economy data, reads the company's annual report, presentations and con calls, answers your full framework and weighs everything together. Takes about 5–10 minutes. Analysis only; you decide.</p></div>
       <button class="btn primary" id="analyse">Analyse now</button></div><div id="live-body"></div></section>
-    <section class="verdict ${tone}"><div class="eyebrow">Quick view (from the last update)</div>
-      <p class="big">${esc(s.n)}: the economic backdrop for ${esc(m.label.toLowerCase())} is ${mood}.</p>
-      <ul>${reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>
-      <div class="chips"><span class="chip">Economy: ${share == null ? NA : Math.round(share * 100) + "% tailwinds"}</span><span class="chip">1-year price: ${st && st.return_1y != null ? pct(st.return_1y) : NA}</span></div>
-      <p class="tiny" style="margin:10px 0 0;font-weight:600">Screening output only. Not investment advice.</p></section>
+    <div id="overall"></div>
     ${candleSection(isin)}
     <section class="panel"><h2>Price history</h2>
       ${series ? `<div class="ranges" id="ranges">${[["1M", 31], ["6M", 183], ["1Y", 366], ["3Y", 1096], ["5Y", 1827]].map(([l, d]) => `<button class="btn ${view.range === d ? "on" : ""}" data-d="${d}">${l}</button>`).join("")}</div><div class="chart" id="chart"></div>` : `<p class="small">Price chart is kept for the 800 most traded stocks; not available for this one.</p>`}
@@ -374,6 +374,10 @@ async function renderStock(isin) {
       candleView = b.dataset.v; document.querySelectorAll("#cview .btn").forEach((x) => x.classList.toggle("on", x === b)); drawCandles(isin);
     }));
   }
+  Promise.all([loadNews(), fundCard(isin)]).then(([n, fc]) => {
+    const ov = document.getElementById("overall");
+    if (ov && location.hash.slice(7) === isin) ov.innerHTML = n && n.all && n.all[isin] ? overallBlock(n.all[isin], n, fc) : "";
+  });
   fundCard(isin).then((fc) => {
     const el = document.getElementById("fullcard"); if (!el || location.hash.slice(7) !== isin) return;
     if (fc === undefined) { el.innerHTML = `<p class="tiny">The full analysis is read from this page's database: open the page on claude.ai while signed in.</p>`; return; }
@@ -435,9 +439,11 @@ function renderIndustry(id) {
       <button class="btn primary" id="ind-analyse">Analyse industry</button></div><div id="ind-body"></div></section>
     <section class="panel"><h2>Best on fundamentals in this industry</h2><p class="sub">From the fundamental scorecards (quality, value, growth, ownership, economy). Screening output, not advice.</p><div id="ind-top"><p class="tiny">Loading scorecards…</p></div></section>
     ${m.valuation_guide ? `<section class="panel"><h2>How to value this industry</h2>${guideBlock(m.valuation_guide, true)}</section>` : ""}
+    <section class="panel"><h2>Today's news for this industry</h2><div id="ind-news"><p class="tiny">Loading…</p></div></section>
     ${macroPanel(m, "Economy check")}
     <section class="panel"><h2>Companies in this industry</h2><p class="sub">Top 40 by value traded. Companies are placed using NSE sector lists and company names.</p>${peersTable(members.slice(0, 40))}</section>
     ${newsPanel(m.news, "Industry news")}`;
+  loadNews().then((n) => { const el = document.getElementById("ind-news"); if (el) el.innerHTML = n ? newsEventsBlock(n, id.replace(/-/g, "_")) + `<p class="tiny">News as of ${ago(n.generated_at)}; every company's overall score on this site already includes it.</p>` : `<p class="tiny">Open on claude.ai to load the news.</p>`; });
   const btn = document.getElementById("ind-analyse"), body = document.getElementById("ind-body");
   btn.addEventListener("click", () => startJob(`industries/${id}`, `INDUSTRY ${id}`, btn, body));
   watchDoc(`industries/${id}`, (d, err) => {
@@ -1059,7 +1065,8 @@ async function loadScores() {
     const fm = await fundMeta();
     if (fm) {
       const parts = await Promise.all(Array.from({ length: fm.index_docs }, (_, k) => DB.doc("fund/i" + String(k).padStart(2, "0")).get().then((d) => (d.exists ? unz(d.data().z) : []))));
-      SCORES = { cards: parts.flat().map((c) => ({ ...c, generated_at: fm.generated_at })), meta: fm };
+      const n = await loadNews();
+      SCORES = { cards: parts.flat().map((c) => { const x = n && n.all ? n.all[c.isin] : null; return { ...c, generated_at: fm.generated_at, overall: x ? x[0] : null, chart: x ? x[2] : null, newsScore: x ? x[3] : null, newsItems: x ? x[5] : [] }; }), meta: fm };
       return SCORES;
     }
     const [snap, meta] = await Promise.all([DB.collection("scores").limit(1000).get(), DB.doc("meta/scores").get()]);
@@ -1070,20 +1077,21 @@ async function loadScores() {
 const gradeCls = (g) => (g === "A" || g === "B" ? "good" : g === "D" || g === "E" ? "bad" : "na");
 function scoreTable(list, showIndustry) {
   const n = (v, suf = "") => (v == null ? "—" : `${v}${suf}`);
-  return `<div class="scroll"><table style="min-width:980px"><thead><tr><th class="num">Rank</th><th>Company</th>${showIndustry ? "<th>Industry</th>" : ""}<th>Grade</th><th class="num">Score</th><th class="num">Quality</th><th class="num">Value</th><th class="num">Growth</th><th class="num">Owners</th><th class="num">Magic F.</th><th class="num">ROE</th><th class="num">ROCE</th><th class="num">P/E (sector)</th><th class="num">Cash ÷ profit</th><th class="num">Debt-ish*</th><th class="num">Promoter (chg)</th><th class="num">Graham</th></tr></thead><tbody>${
-    list.map((c) => { const m = c.metrics || {}, s = c.scores || {}, mf = c.magic_formula || {}, gp = (c.graham || []).filter((x) => x.pass).length;
-      return `<tr><td class="num">${c.rank ?? "—"}</td><td><div class="name"><a href="#stock-${esc(c.isin)}">${esc(c.symbol)}</a></div><div class="co">${esc(c.name || "")}</div></td>${showIndustry ? `<td class="small">${esc(c.industry_label || "")}</td>` : ""}
-        <td><span class="pill ${gradeCls(c.grade)}">${esc(c.grade || "—")}</span></td><td class="num"><b>${n(c.composite)}</b></td><td class="num">${n(s.quality)}</td><td class="num">${n(s.value)}</td><td class="num">${n(s.growth)}</td><td class="num">${n(s.ownership)}</td>
+  return `<div class="scroll"><table style="min-width:980px"><thead><tr><th class="num">Rank</th><th>Company</th>${showIndustry ? "<th>Industry</th>" : ""}<th class="num">Overall now*</th><th>Grade</th><th class="num">Fundamental score</th><th class="num">Chart</th><th>Today's news</th><th class="num">Quality</th><th class="num">Value</th><th class="num">Growth</th><th class="num">Owners</th><th class="num">Magic F.</th><th class="num">ROE</th><th class="num">ROCE</th><th class="num">P/E (sector)</th><th class="num">Cash ÷ profit</th><th class="num">Debt-ish*</th><th class="num">Promoter (chg)</th><th class="num">Graham</th></tr></thead><tbody>${
+    list.map((c, idx) => { const m = c.metrics || {}, s = c.scores || {}, mf = c.magic_formula || {}, gp = (c.graham || []).filter((x) => x.pass).length;
+      return `<tr><td class="num">${idx + 1}</td><td><div class="name"><a href="#stock-${esc(c.isin)}">${esc(c.symbol)}</a></div><div class="co">${esc(c.name || "")}</div></td>${showIndustry ? `<td class="small">${esc(c.industry_label || "")}</td>` : ""}
+        <td class="num"><b>${n(c.overall)}</b></td><td><span class="pill ${gradeCls(c.grade)}">${esc(c.grade || "—")}</span></td><td class="num">${n(c.composite)}</td><td class="num">${n(c.chart)}</td>
+        <td class="tiny" style="min-width:160px">${(c.newsItems || []).map(([v, w]) => `<div class="${v > 0 ? "up" : v < 0 ? "down" : ""}">${v > 0 ? "+" : ""}${v} ${esc(w.length > 70 ? w.slice(0, 70) + "…" : w)}</div>`).join("") || "—"}</td><td class="num">${n(s.quality)}</td><td class="num">${n(s.value)}</td><td class="num">${n(s.growth)}</td><td class="num">${n(s.ownership)}</td>
         <td class="num">${mf.rank ? `${mf.rank}<span class="tiny">/${mf.of}</span>` : "—"}</td><td class="num">${n(m.roe, "%")}</td><td class="num">${n(m.roce, "%")}</td><td class="num">${n(m.pe)} <span class="tiny">(${n(m.pe_sector)})</span></td>
         <td class="num">${n(m.cfo_to_profit, "×")}</td><td class="num">${n(m.liabilities_to_equity, "×")}</td><td class="num">${m.promoter_pct ? `${m.promoter_pct}%` : "—"} <span class="tiny">${m.promoter_change != null ? `(${m.promoter_change > 0 ? "+" : ""}${m.promoter_change})` : ""}</span></td><td class="num">${gp}/${(c.graham || []).length}</td></tr>`; }).join("")}</tbody></table></div>
-    <p class="tiny">Scores 0–100. Quality: ROE, ROCE, cash conversion, balance sheet, margins, profit record. Value: P/E, P/B, EV/EBITDA against the sector. Growth: revenue and profit growth. Owners: promoter stake trend. Magic F.: Greenblatt rank across all non-financial companies. *Debt-ish: total liabilities ÷ equity (debt is not reported separately). Source: Upstox fundamentals.</p>`;
+    <p class="tiny">*Overall now = fundamental score 45% + chart 35% + today's news 20%, refreshed through the trading day. Scores 0–100. Quality: ROE, ROCE, cash conversion, balance sheet, margins, profit record. Value: P/E, P/B, EV/EBITDA against the sector. Growth: revenue and profit growth. Owners: promoter stake trend. Magic F.: Greenblatt rank across all non-financial companies. *Debt-ish: total liabilities ÷ equity (debt is not reported separately). Source: Upstox fundamentals.</p>`;
 }
 
 const inv = { view: "all", industry: "", grade: "", nofin: false, q: "" };
 function renderInvesting() {
   app().innerHTML = `<div><h1>Investing</h1><p class="sub">Long-term picks screened on fundamentals only: business quality, value, growth, ownership and the economic backdrop, plus Greenblatt's Magic Formula across all companies. Click a company and press “Analyse now” for the full framework report. Screening output, not investment advice.</p></div>
     <section class="panel"><div class="controls">
-      <select id="iv-view" aria-label="View"><option value="all">Overall ranking</option><option value="mf">Magic Formula (Greenblatt)</option><option value="best">Top 3 in each industry</option><option value="graham">Passes most Graham tests</option></select>
+      <select id="iv-view" aria-label="View"><option value="all">Overall now (fundamentals + chart + news)</option><option value="mf">Magic Formula (Greenblatt)</option><option value="best">Top 3 in each industry</option><option value="graham">Passes most Graham tests</option></select>
       <select id="iv-ind" aria-label="Industry"><option value="">All industries</option>${Object.values(S.industries).map((i) => `<option value="${esc(i.id.replace(/-/g, "_"))}">${esc(i.label)}</option>`).join("")}</select>
       <select id="iv-grade" aria-label="Grade"><option value="">Any grade</option><option value="A">A only</option><option value="AB">A or B</option></select>
       <label class="small"><input type="checkbox" id="iv-nofin"> Hide banks & lenders</label>
@@ -1117,8 +1125,8 @@ async function drawInvesting() {
     list = list.filter((c) => (c.graham || []).length >= 4).sort((a, b) => (b.graham.filter((x) => x.pass).length / b.graham.length) - (a.graham.filter((x) => x.pass).length / a.graham.length) || b.composite - a.composite);
     html = `<p class="small">Companies passing the most of Graham's defensive-investor tests that the data allows (P/E ≤ 15, P/B ≤ 1.5 or P/E×P/B ≤ 22.5, current ratio ≥ 2, profit every year, adequate size).</p>` + scoreTable(list.slice(0, 50), true);
   } else {
-    list.sort((a, b) => b.composite - a.composite);
-    html = scoreTable(list.slice(0, 100), true);
+    list.sort((a, b) => (b.overall ?? b.composite) - (a.overall ?? a.composite));
+    html = `<p class="small">Ranked on the overall picture now: fundamentals, the chart and today's news together.</p>` + scoreTable(list.slice(0, 100), true);
   }
   const meta = sc.meta || {};
   body.innerHTML = html + `<p class="tiny">${esc(meta.method || "")} ${meta.generated_at ? "Scorecards updated " + ago(meta.generated_at) + "." : ""} ${esc(meta.label || "")}</p>`;

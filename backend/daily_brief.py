@@ -6,7 +6,7 @@ company's fundamentals (precomputed cards) and the important technical indicator
                news is not against them
   caution    - well-known names where today's news or the chart has turned against them
 
-Usage: python -m backend.daily_brief EVENTS.json CARDS_DIR OUT.json [--refresh]
+Usage: python -m backend.daily_brief EVENTS.json CARDS_DIR OUT.json [--refresh] [--live]
 EVENTS.json is written each day by the analyst (Claude) from the news: summary, events with industry
 impacts in -2..+2 and sources, and company-specific items. Screening output, not advice."""
 import base64
@@ -48,8 +48,10 @@ def candles(key: str, row: dict, fetch: bool = False) -> list[dict]:
     if not hit:
         return []
     c = list(hit[0])
-    if c and row.get("price_date") and row["price_date"] > c[-1]["date"] and row.get("close"):
-        c.append({"date": row["price_date"], "open": row.get("open") or row["close"], "high": row.get("high") or row["close"],
+    if c and row.get("price_date") and str(row["price_date"])[:10] == c[-1]["date"] and row.get("close"):
+        c[-1] = {**c[-1], "close": row["close"], "high": max(c[-1]["high"], row["close"]), "low": min(c[-1]["low"], row["close"])}
+    elif c and row.get("price_date") and str(row["price_date"])[:10] > c[-1]["date"] and row.get("close"):
+        c.append({"date": str(row["price_date"])[:10], "open": row.get("open") or row["close"], "high": row.get("high") or row["close"],
                   "low": row.get("low") or row["close"], "close": row["close"], "volume": row.get("volume") or 0})
     return c
 
@@ -75,13 +77,27 @@ def main() -> None:
     nifty = candles("NSE_INDEX|Nifty 50", {}, fetch=True)
     # Candles for the most traded stocks (cached by the hourly refresh; fetched here if missing)
     liquid = sorted([r for r in rows if r["close"]], key=lambda r: -(r["turnover"] or 0))[:600]
+    live = {}
+    if "--live" in sys.argv:  # during market hours: latest traded prices, so scores reflect the market now
+        from backend.sources import upstox_bulk
+        try:
+            live = upstox_bulk.last_prices([r["key"] for r in rows if r["close"]])
+        except Exception:
+            live = {}
+        today = jobs.today_ist().isoformat()
+        for r in rows:
+            p = live.get(r["key"])
+            if p and r["close"]:
+                prev = r["close"] if str(r["price_date"])[:10] < today else (r["prev_close"] or r["close"])
+                r.update(close=p, change_pct=round((p / prev - 1) * 100, 2) if prev else None, price_date=today, open=None, high=None, low=None)
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(3) as ex:
         got = dict(zip([r["key"] for r in liquid], ex.map(lambda r: candles(r["key"], r, fetch=True), liquid)))
     ind_imp: dict[str, list] = {}
     for e in ev["events"]:
-        for ind, (v, why) in e.get("industries", {}).items():
-            ind_imp.setdefault(ind, []).append((v, why, e["title"], bool(e.get("exporters_only"))))
+        for ind, val in e.get("industries", {}).items():
+            v, why, eps = (list(val) + [None])[:3]
+            ind_imp.setdefault(ind, []).append((v, why, e["title"], bool(e.get("exporters_only")), eps))
     EXPORT = re.compile(r"export|united states|\busa\b|u\.s\.|north america|overseas customers", re.I)
     stock_imp = ev.get("stocks", {})
 
@@ -99,10 +115,10 @@ def main() -> None:
         ind = (card or {}).get("industry") or r.get("industry")
         desc = ((card or {}).get("profile") or {}).get("description") or ""
         exporter = bool(EXPORT.search(desc))
-        news_items = [{"impact": v, "why": why, "event": t} for v, why, t, exp_only in ind_imp.get(ind, []) if not exp_only or exporter]
+        news_items = [{"impact": v, "why": why, "event": t, "eps_pct": eps} for v, why, t, exp_only, eps in ind_imp.get(ind, []) if not exp_only or exporter]
         if r["symbol"] in stock_imp:
-            v, why, srcs = stock_imp[r["symbol"]]
-            news_items.append({"impact": v, "why": why, "event": "Company news", "sources": srcs})
+            v, why, srcs, eps = (list(stock_imp[r["symbol"]]) + [None])[:4]
+            news_items.append({"impact": v, "why": why, "event": "Company news", "sources": srcs, "eps_pct": eps})
         nsum = max(-3.0, min(3.0, sum(n["impact"] for n in news_items)))
         news_score = round(50 + nsum * 50 / 3)
         fund = (card or {}).get("composite")
@@ -136,8 +152,8 @@ def main() -> None:
                      key=lambda x: (x["news"], x["tech"] or 50))[:20]
     sectors = []
     for ind, items in sorted(ind_imp.items(), key=lambda kv: sum(v for v, *_ in kv[1])):
-        sectors.append({"industry": ind, "net": round(sum(v for v, *_ in items), 1), "items": [{"impact": v, "why": w, "event": t, "exporters_only": e} for v, w, t, e in items]})
-    brief = {"date": ev["date"], "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "prices_as_of": as_of,
+        sectors.append({"industry": ind, "net": round(sum(v for v, *_ in items), 1), "items": [{"impact": v, "why": w, "event": t, "exporters_only": e, "eps_pct": ep} for v, w, t, e, ep in items]})
+    brief = {"date": ev["date"], "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "prices_as_of": as_of, "live_prices": len(live),
              "summary": ev["summary"], "events": ev["events"], "sectors": sectors,
              "investing": investing, "trading": trading, "caution": caution, "universe": len(out),
              "method": f"Each liquid stock (≥ ₹5 crore traded) is scored on fundamentals (the precomputed scorecard: quality incl. Piotroski, value on the industry's methods, growth, ownership, economy), "
@@ -145,9 +161,31 @@ def main() -> None:
                        f"and today's news (industry and company impacts, −2 to +2, judged from the news with sources). Investing list: fundamental score ≥ 62, news not against it, chart not broken. "
                        f"Trading list: technical score ≥ 70, not stretched more than 4 ATRs above the 50-day average, fundamentals not weak, news not against it.",
              "label": "Screening output from published data and today's news. Not investment advice; no position sizes or strikes. Check each name yourself."}
+    # Every scored stock, compact, so every page can show the news-adjusted picture:
+    # isin -> [overall, fundamentals, technicals, news, earnings effect %, [[impact, why, event]...], tech for, tech against, key indicators]
+    allmap = {}
+    for x in out:
+        eps = [n["eps_pct"] for n in x["news_items"] if n.get("eps_pct") is not None]
+        i = x["ind"] or {}
+        allmap[x["isin"]] = [x["combined"], x["fund"], x["tech"], x["news"], round(sum(eps), 1) if eps else None,
+                             [[n["impact"], n["why"], n["event"]] for n in x["news_items"]], x["tech_for"][:4], x["tech_against"][:3],
+                             {k: i.get(k) for k in ("rsi", "adx", "rs_3m", "extended_atr", "support", "resistance", "squeeze")} if i else None,
+                             x["dow"], x["dow_break"]]
+    brief["all"] = allmap
     Path(out_path).write_text(json.dumps(brief, default=str))
-    raw = json.dumps(brief, default=str).encode()
-    Path(out_path + ".db.json").write_text(json.dumps({"z": base64.b64encode(gzip.compress(raw, 9)).decode(), "date": ev["date"]}))
+    # Database documents (under 256 KiB each): news/live (the news and screens) and news/a0.. (every stock, compact)
+    z = lambda o: base64.b64encode(gzip.compress(json.dumps(o, default=str, separators=(",", ":")).encode(), 9)).decode()  # noqa: E731
+    dd = Path(out_path + ".db")
+    dd.mkdir(exist_ok=True)
+    for old in dd.glob("*.json"):
+        old.unlink()
+    items = list(allmap.items())
+    per = 800
+    parts = [dict(items[k:k + per]) for k in range(0, len(items), per)] or [{}]
+    for k, part in enumerate(parts):
+        (dd / f"a{k}.json").write_text(json.dumps({"z": z(part)}))
+    head = {k: v for k, v in brief.items() if k != "all"}
+    (dd / "live.json").write_text(json.dumps({"z": z(head), "parts": len(parts), "date": ev["date"], "generated_at": brief["generated_at"]}))
     print(f"brief: {len(out)} stocks scored; investing {len(investing)}, trading {len(trading)}, caution {len(caution)}")
 
 
