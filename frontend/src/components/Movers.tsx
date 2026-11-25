@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { fmtCr, fmtPct, fmtPrice, pctColor, type LiveRow } from "@/lib/api";
 
 function List({ title, rows }: { title: string; rows: LiveRow[] }) {
@@ -9,7 +10,7 @@ function List({ title, rows }: { title: string; rows: LiveRow[] }) {
         {rows.map((r) => (
           <li key={r.key} className="flex items-baseline justify-between gap-2">
             <span className="truncate">
-              <span className="font-medium">{r.symbol}</span>{" "}
+              <Link href={`/stock/${r.isin}`} className="font-medium hover:underline">{r.symbol}</Link>{" "}
               <span className="text-xs text-slate-400">₹{fmtCr(r.turnover)} Cr</span>
             </span>
             <span className="shrink-0 tabular-nums">

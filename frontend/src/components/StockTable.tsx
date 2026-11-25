@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { fmtAsOf, fmtCr, fmtInt, fmtPct, fmtPrice, pctColor, type LiveRow } from "@/lib/api";
 
@@ -97,7 +98,7 @@ export function StockTable({ rows }: { rows: LiveRow[] }) {
               <tr key={r.key} className="border-t hover:bg-slate-50">
                 <td className="max-w-[16rem] px-3 py-1.5">
                   <div className="font-medium">
-                    {r.symbol}
+                    {r.isin ? <Link href={`/stock/${r.isin}`} className="hover:underline">{r.symbol}</Link> : r.symbol}
                     <span className="ml-1 text-[10px] text-slate-400">{r.exchanges.join(" · ")}</span>
                   </div>
                   <div className="truncate text-xs text-slate-500">{r.name}</div>
