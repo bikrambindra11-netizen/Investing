@@ -117,7 +117,7 @@ def adjust_eps(eps: dict[str, float], pat: dict[str, float]) -> dict:
     values, adjustments = dict(eps), []
     factor = 1.0
     for newer, older in zip(periods, periods[1:]):
-        if not (eps[newer] and eps[older] and pat[newer] and pat[older]) or eps[newer] <= 0 or eps[older] <= 0:
+        if not (eps.get(newer) and eps.get(older) and pat.get(newer) and pat.get(older)) or eps[newer] <= 0 or eps[older] <= 0:
             continue
         ratio = (pat[newer] / eps[newer]) / (pat[older] / eps[older])
         if ratio >= 1.4:

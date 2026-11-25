@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
-from backend.app import analysis, macro, technicals, valuation_methods
+from backend.app import analysis, macro, patterns, technicals, valuation_methods
 from backend.app.db import SessionLocal
 from backend.app.jobs import today_ist
 from backend.app.market_data import INDEX_TILES, build_rows
@@ -181,10 +181,10 @@ def main() -> None:
             "pivots": t["pivots"], "observations": t["observations"],
             "fib": st["fibonacci"], "trend_lines": st["trend_lines"],
             "patterns": [[p["date"], p["pattern"], p["price"]] for p in st["candles"]],
-            "chart_patterns": st["chart_patterns"], "weekly": st["weekly"]["structure"],
+            "cp": (dp := patterns.detect(c[-250:], window=5, recent=60))["patterns"], "dow": dp["dow"], "weekly": st["weekly"]["structure"],
             "w": {"bars": pack(wk[-104:]), "supports": wsup, "resistances": wres,
                   "fib": technicals.fibonacci(wk, lookback=104), "trend_lines": technicals.trend_lines(wk, lookback=104, tol=0.02),
-                  "patterns": [[p["date"], p["pattern"], p["price"]] for p in wpats], "chart_patterns": technicals.chart_patterns(wk)},
+                  "patterns": [[p["date"], p["pattern"], p["price"]] for p in wpats], "cp": (wp := patterns.detect(wk[-104:], window=3, recent=26))["patterns"], "dow": wp["dow"]},
         }
 
     # Charts on one shared date axis (weekly for older years, daily for the last year) to keep the page small.

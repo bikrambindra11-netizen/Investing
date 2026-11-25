@@ -184,6 +184,9 @@ def main() -> None:
     candles = candles_with_today(primary.instrument_key)
     tech = technicals.analyse(candles, price)
     struct = technicals.structure(candles)
+    from backend.app import patterns
+    _dp = patterns.detect(candles[-250:], window=5, recent=60)
+    struct.update(cp=_dp["patterns"], dow=_dp["dow"])
     png = chart_image.render(out_path.rsplit(".", 1)[0] + "_chart.png", primary.symbol, candles, tech, struct, days=250)
     fno = derivatives.fno_universe().get(primary.instrument_key)
     chain = {"available": False}

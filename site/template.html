@@ -312,7 +312,7 @@ async function renderStock(isin) {
     <section class="verdict ${tone}"><div class="eyebrow">Quick view (from the last update)</div>
       <p class="big">${esc(s.n)}: the economic backdrop for ${esc(m.label.toLowerCase())} is ${mood}.</p>
       <ul>${reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>
-      <div class="chips"><span class="chip">Economy: ${share == null ? NA : Math.round(share * 100) + "% tailwinds"}</span><span class="chip">Company financials: need Upstox login</span><span class="chip">1-year price: ${st && st.return_1y != null ? pct(st.return_1y) : NA}</span></div>
+      <div class="chips"><span class="chip">Economy: ${share == null ? NA : Math.round(share * 100) + "% tailwinds"}</span><span class="chip">1-year price: ${st && st.return_1y != null ? pct(st.return_1y) : NA}</span></div>
       <p class="tiny" style="margin:10px 0 0;font-weight:600">Screening output only. Not investment advice.</p></section>
     ${candleSection(isin)}
     <section class="panel"><h2>Price history</h2>
@@ -326,8 +326,7 @@ async function renderStock(isin) {
     ${macroPanel(m, `Economy check: ${m.label}`)}
     <section class="panel"><h2>Competitors</h2><p class="sub">Same industry and sector, most traded first.</p>${peersTable([s, ...peers], isin)}</section>
     <section class="panel"><h2>Key risks</h2>${risks.length ? `<ul>${risks.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : `<p class="small">No specific red flags in the available data.</p>`}</section>
-    <section class="panel"><h2>Company financials</h2>
-      <div class="notice">Financial statements, ratios (P/E, ROE, ROCE), shareholding, Graham's checks and valuation come from Upstox and need a personal Upstox login, which this hosted page cannot hold. They appear in the version of the portal you run on your own computer.</div></section>
+    <section class="panel" id="fullcard"><p class="loading">Loading the full analysis…</p></section>
     ${newsPanel((S.news || {})[isin], "News")}`;
   liveReport(isin, s);
   if (techStock(isin)) {
@@ -336,10 +335,16 @@ async function renderStock(isin) {
       candleView = b.dataset.v; document.querySelectorAll("#cview .btn").forEach((x) => x.classList.toggle("on", x === b)); drawCandles(isin);
     }));
   }
+  fundCard(isin).then((fc) => {
+    const el = document.getElementById("fullcard"); if (!el || location.hash.slice(7) !== isin) return;
+    if (fc === undefined) { el.innerHTML = `<p class="tiny">The full analysis is read from this page's database: open the page on claude.ai while signed in.</p>`; return; }
+    el.innerHTML = fc ? fullCard(fc) : `<p class="small">No published statements for this company in the data feed (common for very small or newly listed companies).</p>`;
+    const sec = document.querySelector(".levels li:nth-child(4) .name"); if (sec && fc && fc.profile && fc.profile.sector) { sec.textContent = fc.profile.sector; sec.nextElementSibling.textContent = "Upstox company profile"; }
+  });
   loadScores().then((sc) => {
     const el = document.getElementById("scorecard"); if (!el || !sc) return;
     const c = sc.cards.find((x) => x.isin === isin);
-    el.innerHTML = c ? `<h2>Fundamental scorecard (investing)</h2>${scoreTable([c], true)}<p class="tiny">Graham: ${(c.graham || []).map((g) => `${g.pass ? "✓" : "✗"} ${esc(g.test)}`).join(" · ")}. Updated ${ago(c.generated_at)}.</p>` : `<p class="tiny">No fundamental scorecard for this company yet (scorecards cover the ~800 most traded companies).</p>`;
+    el.innerHTML = c ? `<h2>Fundamental scorecard (investing)</h2>${scoreTable([c], true)}<p class="tiny">Graham: ${(c.graham || []).map((g) => `${g.pass ? "✓" : "✗"} ${esc(g.test)}`).join(" · ")}. Updated ${ago(c.generated_at)}.</p>` : `<p class="tiny">No fundamental scorecard for this company yet (statements are still being collected for every listed company).</p>`;
   });
   if (series) {
     drawChart(series);
@@ -440,7 +445,7 @@ function saveDrawings(key, d) { try { localStorage.setItem("draw:" + key, JSON.s
 function keyLevelOf(p, q) {
   const st = q.structure || {}, t = q.technicals || {};
   const lv = [...(t.supports || []).map((l) => [l.level, "support"]), ...(t.resistances || []).map((l) => [l.level, "resistance"]),
-    ...((st.fibonacci && st.fibonacci.levels) || []).map((l) => [l.price, `Fib ${l.ratio}`]), ...(st.chart_patterns || []).map((c) => [c.neckline, "neckline"])];
+    ...((st.fibonacci && st.fibonacci.levels) || []).map((l) => [l.price, `Fib ${l.ratio}`]), ...(st.cp || []).map((c) => [c.breakout, `${c.pattern} breakout`]), ...(st.cp || []).filter((c) => c.breakdown != null).map((c) => [c.breakdown, `${c.pattern} lower line`])];
   const hit = lv.find(([v]) => Math.abs(p.price / v - 1) <= 0.015);
   if (hit) return `${hit[1]} ₹${price(hit[0])}`;
   const rows = q.chart, n = rows.length, i = rows.findIndex((r) => r[0] === p.date);
@@ -460,9 +465,9 @@ function interactiveChart(elId, q, storeKey) {
   const rows = q.chart.map((r) => ({ time: r[0], open: r[1], high: r[2], low: r[3], close: r[4], volume: r[5] }));
   const st = q.structure || {}, t = q.technicals || {};
   const patByDate = {}; (st.candles || []).forEach((p) => (patByDate[p.date] = (patByDate[p.date] ? patByDate[p.date] + ", " : "") + p.pattern));
-  const on = Object.assign({ levels: true, fib: true, trend: true, patterns: true, allpat: false, ma: true, volume: true, rsi: true }, (ICH._prefs || {}));
+  const on = Object.assign({ levels: true, fib: true, trend: true, cp: true, dow: true, patterns: true, allpat: false, ma: true, volume: true, rsi: true }, (ICH._prefs || {}));
   el.innerHTML = `<div class="toolbar">
-      ${[["levels", "Support/resistance"], ["fib", "Fibonacci"], ["trend", "Trend lines"], ["patterns", "Patterns at key levels"], ["allpat", "Show all patterns"], ["ma", "Averages"], ["volume", "Volume"], ["rsi", "RSI"]].map(([k, l]) => `<label><input type="checkbox" data-o="${k}" ${on[k] ? "checked" : ""}> ${l}</label>`).join("")}
+      ${[["levels", "Support/resistance"], ["fib", "Fibonacci"], ["trend", "Trend lines"], ["cp", "Chart patterns"], ["dow", "Dow structure (HH/HL/LH/LL)"], ["patterns", "Candle patterns at key levels"], ["allpat", "Show all patterns"], ["ma", "Averages"], ["volume", "Volume"], ["rsi", "RSI"]].map(([k, l]) => `<label><input type="checkbox" data-o="${k}" ${on[k] ? "checked" : ""}> ${l}</label>`).join("")}
     </div><div class="toolbar">
       <button class="btn sm" data-a="hline">+ Horizontal line</button><button class="btn sm" data-a="tline">+ Trend line</button>
       <button class="btn sm" data-a="undo">Undo drawing</button><button class="btn sm" data-a="clear">Clear my drawings</button>
@@ -493,7 +498,6 @@ function interactiveChart(elId, q, storeKey) {
   if (on.levels) {
     (t.supports || []).forEach((l) => pl(l.level, UP, `S ${l.touches}×`, LC.LineStyle.Dashed, 2));
     (t.resistances || []).forEach((l) => pl(l.level, DN, `R ${l.touches}×`, LC.LineStyle.Dashed, 2));
-    (st.chart_patterns || []).forEach((p) => pl(p.neckline, "#0ea5e9", `${p.pattern} neck`, LC.LineStyle.LargeDashed));
   }
   if (on.fib && st.fibonacci) st.fibonacci.levels.forEach((l) => pl(l.price, WARN, `Fib ${l.ratio}`, LC.LineStyle.Dotted));
   const n = rows.length;
@@ -504,12 +508,27 @@ function interactiveChart(elId, q, storeKey) {
       .setData([{ time: rows[x0].time, value: at(x0) }, { time: rows[n - 1].time, value: at(n - 1) }]);
   });
   const BEAR = ["Bearish engulfing", "Shooting star", "Evening star", "Three black crows", "Bearish marubozu", "Bearish harami", "Gap down"];
+  const dates = new Set(rows.map((r) => r.time)), markers = [];
+  const snap = (d) => { if (dates.has(d)) return d; const r = rows.find((x) => x.time >= d); return r ? r.time : null; };  // weekly bars are dated by the week's last session
+  if (on.cp) (st.cp || []).forEach((p) => {
+    const col = /bull/.test(p.bias) ? UP : /bear/.test(p.bias) ? DN : "#0ea5e9";
+    (p.lines || []).forEach(([a, b]) => { const ta = snap(a[0]), tb = snap(b[0]); if (!ta || !tb || ta >= tb) return;
+      main.addLineSeries({ color: col, lineWidth: 2, lineStyle: LC.LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+        .setData([{ time: ta, value: a[1] }, { time: tb, value: b[1] }]); });
+    if ((p.points || []).length >= 2 && !/channel|triangle|wedge|Rectangle/.test(p.pattern)) {
+      const pts = p.points.map(([d, v]) => ({ time: snap(d), value: v })).filter((x) => x.time);
+      const uniq = pts.filter((x, i) => i === 0 || x.time > pts[i - 1].time);
+      if (uniq.length >= 2) main.addLineSeries({ color: col, lineWidth: 1, lineStyle: LC.LineStyle.Dotted, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }).setData(uniq);
+    }
+    const t0 = snap(p.points && p.points.length ? p.points[p.points.length - 1][0] : p.end);
+    if (t0) markers.push({ time: t0, position: /bear/.test(p.bias) ? "aboveBar" : "belowBar", color: col, shape: "square", text: `${p.pattern} (${p.status.split(" (")[0]})` });
+  });
+  if (on.dow && st.dow) (st.dow.swings || []).forEach((w) => { const tm = snap(w.date); if (tm) markers.push({ time: tm, position: w.type === "high" ? "aboveBar" : "belowBar", color: /H[HL]/.test(w.label) && w.label !== "LH" ? UP : DN, shape: "circle", text: w.label }); });
   if (on.patterns || on.allpat) {
-    const dates = new Set(rows.map((r) => r.time));
-    candle.setMarkers((st.candles || []).filter((p) => dates.has(p.date) && (on.allpat || keyLevelOf(p, q))).map((p) => { const b = BEAR.includes(p.pattern);
-      return { time: p.date, position: b ? "aboveBar" : "belowBar", color: b ? DN : UP, shape: b ? "arrowDown" : "arrowUp", text: p.pattern }; })
-      .sort((a, b) => (a.time < b.time ? -1 : 1)));
+    (st.candles || []).filter((p) => dates.has(p.date) && (on.allpat || keyLevelOf(p, q))).forEach((p) => { const b = BEAR.includes(p.pattern);
+      markers.push({ time: p.date, position: b ? "aboveBar" : "belowBar", color: b ? DN : UP, shape: b ? "arrowDown" : "arrowUp", text: p.pattern }); });
   }
+  candle.setMarkers(markers.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0)));
   if (rsiC) {
     const r = rsiArr(closes), s = rsiC.addLineSeries({ color: "#7c3aed", lineWidth: 1, title: "RSI 14" });
     s.setData(r.map((x, i) => (x == null ? { time: rows[i].time } : { time: rows[i].time, value: x })));  // blanks keep the panes aligned
@@ -582,7 +601,7 @@ function techQ(isin, view) {
   const kind = (arr, k) => arr.map((l) => ({ ...l, kind: k }));
   return { chart: view === "weekly" ? t.w._bars : t._bars,
            technicals: { supports: kind(v.supports, "support"), resistances: kind(v.resistances, "resistance") },
-           structure: { fibonacci: v.fib, trend_lines: v.trend_lines, chart_patterns: v.chart_patterns, candles: v.patterns }, recent: view === "weekly" ? 12 : 30 };
+           structure: { fibonacci: v.fib, trend_lines: v.trend_lines, cp: v.cp || [], dow: v.dow, candles: v.patterns }, recent: view === "weekly" ? 12 : 30 };
 }
 let candleView = "daily";
 function candleSection(isin) {
@@ -606,7 +625,10 @@ function candleInfo(isin) {
       ${!wk && t.pivots ? kv("Pivot / R1 / S1", `${price(t.pivots.pivot)} / ${price(t.pivots.r1)} / ${price(t.pivots.s1)}`) : ""}</div>
     ${v.fib ? `<p class="small">${esc(v.fib.reading)}</p>` : ""}
     ${v.trend_lines.length ? `<ul class="small">${v.trend_lines.map((tl) => `<li>Trend line: ${esc(tl.kind)} from ₹${price(tl.from.price)} (${esc(tl.from.date)}) through ₹${price(tl.to.price)} (${esc(tl.to.date)}), ${tl.touches} touches, now ₹${price(tl.value_now)}</li>`).join("")}</ul>` : ""}
-    ${v.chart_patterns.length ? `<ul class="small">${v.chart_patterns.map((p) => `<li>${esc(p.pattern)} at ₹${price(p.level)}, neckline ₹${price(p.neckline)}: ${esc(p.meaning)}</li>`).join("")}</ul>` : ""}
+    ${v.dow ? `<p class="small"><b>Dow theory:</b> ${esc(v.dow.trend)}. Last swings: ${(v.dow.swings || []).slice(-6).map((w) => `${esc(w.label)} ₹${price(w.price)}`).join(" → ")}.${v.dow.break ? ` <b>${esc(v.dow.break)}</b>` : ""}</p>` : ""}
+    <details class="sec" open><summary>Chart patterns (${(v.cp || []).length})</summary>
+      ${(v.cp || []).length ? `<div class="scroll"><table><thead><tr><th>Pattern</th><th>From – to</th><th>Status</th><th class="num">Breakout level</th><th class="num">Measured move*</th><th>What it shows</th></tr></thead><tbody>${v.cp.map((p) => `<tr><td><b>${esc(p.pattern)}</b><div class="tiny">${esc(p.bias)}</div></td><td class="tiny">${esc(p.start)} – ${esc(p.end)}</td><td class="small">${esc(p.status)}</td><td class="num">₹${price(p.breakout)}${p.breakdown != null ? `<div class="tiny">lower ₹${price(p.breakdown)}</div>` : ""}</td><td class="num">${p.measured_move != null ? "₹" + price(p.measured_move) : "—"}</td><td class="small">${esc(p.meaning)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="small">No double/triple top or bottom, head and shoulders, triangle, wedge, flag, pennant, channel or cup and handle in the recent ${wk ? "26 weeks" : "60 sessions"}.</p>`}
+      <p class="tiny">Found from swing highs and lows and drawn on the chart (dashed lines). *Measured move: the textbook projection of the pattern's height from its breakout, not a forecast. A pattern counts only once price closes beyond its breakout level. Check each by eye.</p></details>
     <details class="sec" open><summary>Candlestick patterns at key levels, last ${wk ? "12 weeks" : "30 sessions"} (${pats.length})</summary>
       ${pats.length ? `<div class="scroll"><table><thead><tr><th>${wk ? "Week of" : "Date"}</th><th>Pattern</th><th>What it means</th><th class="num">At</th><th>Key level</th></tr></thead><tbody>${pats.map((p) => `<tr><td class="tiny">${esc(p.date)}</td><td><b>${esc(p.pattern)}</b></td><td class="small">${esc(p.meaning)}</td><td class="num">₹${price(p.price)}</td><td class="small">${esc(p.at)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="small">No candlestick pattern formed at a key level in this window.</p>`}
       ${others.length ? `<details style="margin-top:6px"><summary class="small">${others.length} other pattern${others.length === 1 ? "" : "s"} away from key levels (less meaningful)</summary><ul class="small">${others.map((p) => `<li>${esc(p.date)}: ${esc(p.pattern)} at ₹${price(p.price)}</li>`).join("")}</ul></details>` : ""}
@@ -704,7 +726,8 @@ function renderQuant(q, fw) {
       ${st.weekly ? `<p class="small"><b>Weekly trend:</b> ${esc(st.weekly.structure)} · 10-week avg ₹${price(st.weekly.sma10w)} · 40-week avg ₹${price(st.weekly.sma40w)}</p>` : ""}
       ${fb ? `<p class="small"><b>Fibonacci:</b> ${esc(fb.reading)}</p><div class="grid kv">${fb.levels.map((l) => kv(`Retracement ${l.ratio}`, "₹" + price(l.price))).join("")}${fb.extensions.map((l) => kv(`Extension ${l.ratio}`, "₹" + price(l.price))).join("")}</div>` : ""}
       ${(st.trend_lines || []).length ? `<p class="small" style="margin-bottom:0"><b>Trend lines</b></p><ul class="small">${st.trend_lines.map((tl) => `<li>${esc(tl.kind)} from ₹${price(tl.from.price)} (${esc(tl.from.date)}) through ₹${price(tl.to.price)} (${esc(tl.to.date)}), ${tl.touches} touches; today at ₹${price(tl.value_now)} (price ${pct(tl.distance_pct)} from it)</li>`).join("")}</ul>` : ""}
-      ${(st.chart_patterns || []).length ? `<p class="small" style="margin-bottom:0"><b>Chart patterns</b></p><ul class="small">${st.chart_patterns.map((p) => `<li>${esc(p.pattern)} at ₹${price(p.level)} (${esc(p.points.join(" & "))}), neckline ₹${price(p.neckline)} — ${esc(p.meaning)}</li>`).join("")}</ul>` : ""}
+      ${st.dow ? `<p class="small"><b>Dow theory:</b> ${esc(st.dow.trend)}.${st.dow.break ? " " + esc(st.dow.break) : ""}</p>` : ""}
+      ${(st.cp || []).length ? `<p class="small" style="margin-bottom:0"><b>Chart patterns</b></p><ul class="small">${st.cp.map((p) => `<li><b>${esc(p.pattern)}</b> (${esc(p.bias)}), ${esc(p.start)} – ${esc(p.end)}: ${esc(p.status)}; breakout ₹${price(p.breakout)}${p.measured_move != null ? `, measured move ₹${price(p.measured_move)}` : ""} — ${esc(p.meaning)}</li>`).join("")}</ul>` : ""}
       ${(st.candles || []).length ? `<p class="small" style="margin-bottom:0"><b>Candle patterns (last 30 sessions)</b></p><div class="scroll"><table><thead><tr><th>Date</th><th>Pattern</th><th>What it means</th></tr></thead><tbody>${st.candles.slice(-15).reverse().map((p) => `<tr><td class="tiny">${esc(p.date)}</td><td>${esc(p.pattern)}</td><td class="small">${esc(p.meaning)}</td></tr>`).join("")}</tbody></table></div>` : ""}
       <p class="tiny">Detected automatically from swing highs and lows; Claude checks them against the chart in the written analysis.</p></details>`;
   }
@@ -916,6 +939,77 @@ function industryReport(r) {
     ${(r.industry_news || []).length ? `<details class="sec"><summary>Latest industry news</summary><ul class="small">${r.industry_news.map((nn) => { const u = safeUrl(nn.link); return `<li><span class="pill ${esc(nn.sentiment)}">${esc(nn.sentiment)}</span> ${u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(nn.title)}</a>` : esc(nn.title)} <span class="tiny">${when(nn.published)}</span></li>`; }).join("")}</ul></details>` : ""}`;
 }
 
+
+// ---------- precomputed full analysis for every company (page database, gzip + base64 documents)
+async function unz(b64) {
+  const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const txt = await new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+  return JSON.parse(txt);
+}
+function fnv(str) { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h >>> 0; }
+const FUND = { meta: undefined, chunks: {} };
+async function fundMeta() {
+  if (FUND.meta !== undefined) return FUND.meta;
+  await caps; if (!DB) return (FUND.meta = null);
+  try { const d = await DB.doc("fund/meta").get(); FUND.meta = d.exists ? d.data() : null; } catch (e) { FUND.meta = null; }
+  return FUND.meta;
+}
+async function fundCard(isin) {
+  const m = await fundMeta(); if (!m) return undefined;
+  const k = "c" + String(fnv(isin) % m.chunks).padStart(3, "0");
+  if (!FUND.chunks[k]) FUND.chunks[k] = DB.doc("fund/" + k).get().then((d) => (d.exists ? unz(d.data().z) : {})).catch(() => ({}));
+  return (await FUND.chunks[k])[isin] || null;
+}
+const fx = (v, nd = 1, suf = "") => (v == null ? "—" : `${Number(v).toLocaleString("en-IN", { maximumFractionDigits: nd, minimumFractionDigits: 0 })}${suf}`);
+const YROWS = [
+  ["Profit and loss (₹ Cr)", [["Revenue", "revenue", 0], ["Other income", "other_income", 0], ["Expenses", "expenses", 0], ["Profit before tax", "pbt", 0], ["Tax", "tax", 0], ["Net profit", "pat", 0], ["EPS ₹", "eps", 2],
+    ["Pre-tax margin", "pbt_margin_pct", 1, "%"], ["Net margin", "net_margin_pct", 1, "%"], ["Tax rate", "tax_rate_pct", 1, "%"], ["Other income ÷ pre-tax profit", "other_income_share_pct", 1, "%"],
+    ["Revenue growth", "revenue_growth_pct", 1, "%"], ["Profit growth", "pat_growth_pct", 1, "%"], ["EPS growth", "eps_growth_pct", 1, "%"]]],
+  ["Balance sheet (₹ Cr)", [["Total assets", "total_assets", 0], ["Long-term assets", "non_current_assets", 0], ["Current assets", "current_assets", 0], ["Current liabilities", "current_liabilities", 0],
+    ["Long-term liabilities", "non_current_liabilities", 0], ["Equity (net worth)", "equity", 0], ["Working capital", "working_capital", 0], ["Book value per share ₹", "book_value_per_share", 2],
+    ["Shares (crore)", "shares_cr", 2], ["Share count change", "share_count_change_pct", 1, "%"], ["Current ratio", "current_ratio", 2], ["Liabilities ÷ equity", "liabilities_to_equity", 2, "×"],
+    ["Long-term liabilities ÷ assets", "long_term_liabilities_to_assets", 2], ["Book value growth", "book_value_growth_pct", 1, "%"]]],
+  ["Returns", [["Return on equity", "roe_pct", 1, "%"], ["Return on assets", "roa_pct", 1, "%"], ["Pre-tax return on capital employed", "pretax_roce_pct", 1, "%"], ["Asset turnover", "asset_turnover", 2, "×"], ["Equity multiplier", "equity_multiplier", 2, "×"]]],
+  ["Cash flow (₹ Cr)", [["Operating cash flow", "cfo", 0], ["Investing cash flow", "cfi", 0], ["Financing cash flow", "cff", 0], ["Free cash flow (op + inv)", "free_cash_flow", 0], ["Change in working capital", "change_in_wc", 0],
+    ["Cash at year end", "cash_end", 0], ["Operating cash ÷ profit", "cfo_to_pat", 2, "×"], ["Free-cash-flow margin", "fcf_margin_pct", 1, "%"], ["Reinvestment rate", "reinvestment_rate_pct", 0, "%"], ["Accruals ÷ assets", "accruals_to_assets_pct", 1, "%"]]],
+];
+function fullCard(c) {
+  const st = c.st || {}, ys = st.years || [], mt = st.multiples || {};
+  let h = `<h2>Full analysis from the statements</h2><p class="sub">Every number worked out in advance from the company's P&L, balance sheet and cash flow (${esc(st.basis || "")}), with its industry's valuation methods and your framework checklist. Updated ${ago(c.generated_at)} · statements fetched ${when(c.fetched_at)}.</p>
+    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:6px 0 10px"><span class="grade ${esc(c.grade || "")}">${esc(c.grade || "—")}</span><div><div class="name">Score ${c.composite ?? "—"}/100 · rank ${c.rank ?? "—"} of ${FUND.meta ? FUND.meta.ranked : "—"}</div>
+      <div class="small">Quality ${c.scores?.quality ?? "—"} · Value ${c.scores?.value ?? "—"} · Growth ${c.scores?.growth ?? "—"} · Owners ${c.scores?.ownership ?? "—"} · Magic Formula ${c.magic_formula?.rank ? `${c.magic_formula.rank} of ${c.magic_formula.of}` : "—"}</div></div></div>`;
+  // Checklist (the framework document)
+  const secs = {}; (c.checklist || []).forEach((it) => (secs[it.s] = secs[it.s] || []).push(it));
+  h += `<details class="sec" open><summary>Your framework checklist, answered from the numbers</summary>${Object.entries(secs).map(([sec, items]) => `<h3 style="margin:10px 0 4px">${esc(sec)}</h3>
+    <div class="scroll"><table><tbody>${items.map((it) => `<tr><td style="width:30%"><b>${esc(it.q)}</b><div class="tiny">${esc(it.b)}</div></td><td class="small">${esc(it.a)}</td></tr>`).join("")}</tbody></table></div>`).join("")}
+    <p class="tiny">Items marked “needs documents” are answered in full by “Analyse now”, which reads the annual report, presentations and con calls.</p></details>`;
+  if (ys.length) {
+    const cols = ys.slice().reverse();
+    h += `<details class="sec" open><summary>Statements and ratios, year by year</summary><div class="scroll"><table style="min-width:640px"><thead><tr><th></th>${cols.map((y) => `<th class="num">${esc(y.period)}</th>`).join("")}</tr></thead><tbody>${
+      YROWS.map(([g, rows]) => `<tr><td colspan="${cols.length + 1}" style="background:var(--soft)"><b>${esc(g)}</b></td></tr>` + rows.map(([lab, k, nd, suf]) => `<tr><td>${esc(lab)}</td>${cols.map((y) => `<td class="num">${fx(y[k], nd, suf || "")}</td>`).join("")}</tr>`).join("")).join("")}</tbody></table></div>
+      <p class="tiny">Growth over ${st.cagr?.years ?? "—"} years, a year: revenue ${fx(st.cagr?.revenue_pct, 1, "%")}, profit ${fx(st.cagr?.pat_pct, 1, "%")}, EPS ${fx(st.cagr?.eps_pct, 1, "%")}, book value ${fx(st.cagr?.book_value_pct, 1, "%")}, operating cash ${fx(st.cagr?.cfo_pct, 1, "%")}. Returns use average balances. Borrowings, inventory, receivables, interest and depreciation are not in the data feed. Source: Upstox fundamentals (₹ crore).</p></details>`;
+    const flags = st.checks || [];
+    h += `<details class="sec" open><summary>What the statements say</summary><ul class="small">${flags.map((f) => `<li><span class="pill ${f.flag === "good" ? "good" : f.flag === "bad" ? "bad" : "na"}">${esc(f.flag)}</span> ${esc(f.text)}</li>`).join("")}</ul>
+      <div class="grid kv">${st.dupont ? kv("DuPont (ROE = margin × turnover × leverage)", `${fx(st.dupont.net_margin_pct)}% × ${fx(st.dupont.asset_turnover, 2)} × ${fx(st.dupont.equity_multiplier, 2)} = ${fx(st.dupont.roe_pct)}%<div class="tiny">${esc(st.dupont.reading)}</div>`) : ""}
+        ${st.piotroski?.available ? kv("Piotroski F-score", `${st.piotroski.score} / ${st.piotroski.of} <span class="tiny">(${esc(st.piotroski.reading)}, ${esc(st.piotroski.period)})</span>`) : ""}
+        ${st.altman?.available ? kv("Altman Z'' (balance-sheet stress)", `${st.altman.z} — ${esc(st.altman.zone)}<div class="tiny">${esc(st.altman.note)}</div>`) : kv("Altman Z''", esc(st.altman?.reason || "—"))}
+        ${kv("Market value", `₹${fx(mt.market_cap_cr, 0)} Cr`)}${kv("P/E · P/B · P/S", `${fx(mt.pe)} · ${fx(mt.pb, 2)} · ${fx(mt.ps, 2)}`)}${kv("Price ÷ operating cash", fx(mt.p_cfo))}
+        ${kv("Earnings yield · FCF yield", `${fx(mt.earnings_yield_pct, 1, "%")} · ${fx(mt.fcf_yield_pct, 1, "%")}`)}${kv("EV/EBITDA · ROCE (Upstox)", `${fx(mt.ev_ebitda_upstox)} · ${fx(mt.roce_upstox, 1, "%")}`)}</div>
+      ${st.piotroski?.available ? `<details style="margin-top:6px"><summary class="small">Piotroski's nine tests</summary><ul class="small">${st.piotroski.tests.map((t) => `<li>${t.pass == null ? "–" : t.pass ? "✓" : "✗"} ${esc(t.test)}: ${esc(String(t.value ?? "—"))}${t.note ? ` <span class="tiny">(${esc(t.note)})</span>` : ""}</li>`).join("")}</ul></details>` : ""}</details>`;
+  } else h += `<p class="notice">${esc(st.reason || "No statements in the data feed for this company.")}</p>`;
+  if (c.vm && c.vm.methods) h += methodsBlock({ ...c.vm, guide: { ...c.vm.guide, secondary: [], watch: [], sources: [] } }, true, true);
+  if (c.dcf) h += `<p class="small">${c.dcf.available ? `<b>${esc(c.dcf.method)}:</b> ₹${price(c.dcf.value)} (${pct(c.dcf.upside_pct)} vs price). <span class="tiny">${esc(c.dcf.assumptions || "")}</span>` : esc(c.dcf.reason || "")}</p>`;
+  if ((c.graham_full || []).length) h += `<details class="sec"><summary>Graham's defensive investor checks</summary><ul class="small">${c.graham_full.map((g) => `<li><span class="pill ${g.status === "pass" ? "good" : g.status === "fail" ? "bad" : "na"}">${esc(g.status.replace("_", " "))}</span> <b>${esc(g.name)}</b>: ${esc(g.value || NA)} <span class="tiny">(${esc(g.rule)})${g.note ? " " + esc(g.note) : ""}</span></li>`).join("")}</ul></details>`;
+  if (c.sh && c.sh.rows) {
+    const names = { promoters: "Promoters", fii: "Foreign institutions", mutual_funds: "Mutual funds", other_dii: "Other domestic institutions", retail_and_other: "Retail & others" };
+    h += `<details class="sec"><summary>Shareholding, ${(c.sh.periods || []).length} quarters</summary><div class="scroll"><table><thead><tr><th>Holder</th>${(c.sh.periods || []).map((p) => `<th class="num">${esc(p)}</th>`).join("")}</tr></thead><tbody>${c.sh.rows.map((r) => `<tr><td>${esc(names[r.key] || r.key)}</td>${r.values.map((v) => `<td class="num">${fx(v.pct, 2, "%")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+      <p class="tiny">Free float ${fx(c.free_float_pct, 2, "%")}. Indices: ${esc((c.indices || []).join(", ") || "none tracked")}. ${c.delivery?.available ? `Delivery ${c.delivery.latest.delivery_pct}% last session, ${c.delivery.avg_delivery_pct}% 5-day average.` : ""}</p></details>`;
+  }
+  const q = c.q || {};
+  if ((q.revenue || []).length) h += `<details class="sec"><summary>Last 4 quarters</summary><div class="scroll"><table><thead><tr><th></th>${q.revenue.map((x) => `<th class="num">${esc(x.period)}</th>`).join("")}</tr></thead><tbody>${[["Revenue", "revenue"], ["Operating profit", "operating_profit"], ["Net profit", "net_profit"]].filter(([, k]) => q[k]).map(([l, k]) => `<tr><td>${l} ₹Cr</td>${q[k].map((x) => `<td class="num">${fx(x.value, 0)}</td>`).join("")}</tr>`).join("")}</tbody></table></div></details>`;
+  return h + `<p class="tiny">Screening output from published figures. Not investment advice.</p>`;
+}
+
 // ---------- investing (fundamental scorecards from the page database)
 let SCORES = null;
 async function loadScores() {
@@ -923,6 +1017,12 @@ async function loadScores() {
   await caps;
   if (!DB) return null;
   try {
+    const fm = await fundMeta();
+    if (fm) {
+      const parts = await Promise.all(Array.from({ length: fm.index_docs }, (_, k) => DB.doc("fund/i" + String(k).padStart(2, "0")).get().then((d) => (d.exists ? unz(d.data().z) : []))));
+      SCORES = { cards: parts.flat().map((c) => ({ ...c, generated_at: fm.generated_at })), meta: fm };
+      return SCORES;
+    }
     const [snap, meta] = await Promise.all([DB.collection("scores").limit(1000).get(), DB.doc("meta/scores").get()]);
     SCORES = { cards: snap.docs.map((d) => d.data()), meta: meta.exists ? meta.data() : {} };
     return SCORES;

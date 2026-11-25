@@ -32,14 +32,19 @@ def _client() -> httpx.Client:
     return httpx.Client(headers={"Accept": "application/json", "Authorization": f"Bearer {token}"}, timeout=30)
 
 
+STATS = {"calls": 0, "throttled": 0, "errors": 0}
+
+
 def _get(c: httpx.Client, path: str, params: dict | None = None) -> dict | list | None:
     for attempt in range(4):
+        STATS["calls"] += 1
         try:
             r = c.get(BASE + path, params=params)
         except httpx.HTTPError:
             time.sleep(2 * (attempt + 1))
             continue
         if r.status_code == 429 or r.status_code >= 500:
+            STATS["throttled" if r.status_code == 429 else "errors"] += 1
             time.sleep(3 * (attempt + 1))
             continue
         if r.status_code in (401, 403):

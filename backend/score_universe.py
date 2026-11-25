@@ -25,7 +25,7 @@ from backend.app.db import SessionLocal, init_db  # noqa: E402
 from backend.app.market_data import build_rows  # noqa: E402
 from backend.sources import upstox_bulk  # noqa: E402
 
-ENDPOINTS = {k: v for k, v in upstox_bulk.ENDPOINTS.items() if k in ("profile", "income", "balance", "cashflow", "ratios", "holdings")}
+ENDPOINTS = {k: v for k, v in upstox_bulk.ENDPOINTS.items() if k in ("profile", "income", "income_q", "balance", "cashflow", "ratios", "holdings", "actions")}
 FINANCIAL = {"banks", "nbfc"}
 MF_EXCLUDED = FINANCIAL | {"power"}  # Greenblatt leaves out financials and utilities
 
@@ -56,27 +56,44 @@ def fetch(cache_path: Path, universe: int, budget: int, rate: float = 1.0) -> No
         e = cache.get(isin)
         return 1e9 if not e else (now - datetime.fromisoformat(e["fetched_at"])).total_seconds() / 86400
 
-    todo = sorted(rows, key=lambda r: -age(r["isin"]))
-    todo = [r for r in todo if age(r["isin"]) > 6][:budget]
+    def missing(isin):
+        e = cache.get(isin) or {}
+        return [n for n in ENDPOINTS if n not in e]
+
+    # Companies never fetched or stale first; then companies only missing some statements (e.g. quarterly, dividends)
+    todo = [r for r in rows if age(r["isin"]) > 6] + [r for r in rows if age(r["isin"]) <= 6 and missing(r["isin"])]
+    todo = todo[:budget]
     pacer = Pacer(rate)
     done = 0
     with upstox_bulk._client() as c:
         for r in todo:
-            data = {}
+            fresh = age(r["isin"]) > 6
+            data = {} if fresh else dict(cache[r["isin"]])
             for name, (path, params) in ENDPOINTS.items():
+                if not fresh and name in data:
+                    continue
                 pacer.wait()
                 d = upstox_bulk._get(c, f"/fundamentals/{r['isin']}/{path}", params)
                 if d is None and params.get("type") == "consolidated":
                     pacer.wait()
                     d = upstox_bulk._get(c, f"/fundamentals/{r['isin']}/{path}", {**params, "type": "standalone"})
                 data[name] = d
-            data["fetched_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
-            if data.get("ratios") or data.get("income"):
+                if fresh and name == "income" and data.get("profile") is None and d is None:
+                    break  # no fundamentals for this company: do not spend the other requests
+            if not fresh:
                 cache[r["isin"]] = data
+                done += 1
+                if done % 25 == 0:
+                    cache_path.write_text(json.dumps(cache, separators=(",", ":")))
+                    print(f"{done}/{len(todo)} fetched", flush=True)
+                continue
+            data["fetched_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            cache[r["isin"]] = data  # kept even when empty, so it is not asked again for a week
             done += 1
             if done % 25 == 0:
                 cache_path.write_text(json.dumps(cache, separators=(",", ":")))
-                print(f"{done}/{len(todo)} fetched", flush=True)
+            if done % 10 == 0:
+                print(f"{done}/{len(todo)} fetched {datetime.now(timezone.utc):%H:%M:%S} {upstox_bulk.STATS}", flush=True)
     cache_path.write_text(json.dumps(cache, separators=(",", ":")))
     print(f"done: {done} fetched, cache holds {len(cache)} companies", flush=True)
 
@@ -143,6 +160,11 @@ def card(isin: str, row: dict, raw: dict, macro_share: dict) -> dict:
         q.append(1.0 if m["net_margin"] >= m["net_margin_old"] - 1 else 0.3)
     if profits:
         q.append(1.0 if all(p > 0 for p in profits) else 0.0)
+    from backend.app import statements
+    pio = statements.piotroski(statements.years(f), fin_co)
+    if pio.get("available") and pio["of"] >= 5:
+        q.append(pio["score"] / pio["of"])
+        m["piotroski"] = f"{pio['score']}/{pio['of']}"
     quality = sum(q) / len(q) if q else None
 
     gr = [clamp01((x + 5) / 25) for x in (m["revenue_cagr"], m["profit_cagr"]) if x is not None]
@@ -187,8 +209,18 @@ def score(cache_path: Path, out_dir: Path) -> None:
         rows, as_of = build_rows(s)
     by = {r["isin"]: r for r in rows}
     cache = json.loads(cache_path.read_text())
+    cards, summary = compute(cache, by, as_of)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for i, c in cards.items():
+        (out_dir / f"{i}.json").write_text(json.dumps(c, default=str))
+    (out_dir / "_summary.json").write_text(json.dumps(summary))
+    print(f"scored {len(cards)} companies, {summary['ranked']} ranked, magic formula universe {summary['magic_formula_universe']}")
+
+
+def compute(cache: dict, by: dict, as_of) -> tuple[dict, dict]:
+    """Scorecards, universe-wide Magic Formula rank and composite rank for every company in the cache."""
     shares = {iid: macro.industry_macro(iid)["score"]["share_tailwinds"] for iid in macro.load_industries()}
-    cards = {i: card(i, by[i], raw, shares) for i, raw in cache.items() if i in by}
+    cards = {i: card(i, by[i], raw, shares) for i, raw in cache.items() if i in by and (raw.get("income") or raw.get("ratios"))}
 
     # Greenblatt Magic Formula across the whole universe: rank on return on capital and on earnings yield
     elig = {i: c for i, c in cards.items() if c["industry"] not in MF_EXCLUDED and c["metrics"]["roce"] is not None
@@ -218,25 +250,22 @@ def score(cache_path: Path, out_dir: Path) -> None:
     ranked = sorted([c for c in cards.values() if c["composite"] is not None], key=lambda c: -c["composite"])
     for n, c in enumerate(ranked, 1):
         c["rank"] = n
-    out_dir.mkdir(parents=True, exist_ok=True)
-    for i, c in cards.items():
-        c["generated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        (out_dir / f"{i}.json").write_text(json.dumps(c, default=str))
-    summary = {"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "companies": len(cards),
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    for c in cards.values():
+        c["generated_at"] = now
+    summary = {"generated_at": now, "companies": len(cards),
                "ranked": len(ranked), "magic_formula_universe": len(combined), "prices_as_of": as_of,
-               "weights": weights, "method": "Quality 35%, value 25%, growth 20%, ownership 10%, economy 10%. Magic Formula ranks all non-financial, non-utility companies on ROCE and earnings yield (1 ÷ EV/EBITDA) and adds the two ranks, as in Greenblatt's book.",
+               "weights": weights, "method": "Quality 35%, value 25%, growth 20%, ownership 10%, economy 10%. Quality includes the Piotroski F-score and cash conversion from the statements. Magic Formula ranks all non-financial, non-utility companies on ROCE and earnings yield (1 ÷ EV/EBITDA) and adds the two ranks, as in Greenblatt's book.",
                "label": "Screening output from fundamentals. Not investment advice."}
-    (out_dir / "_summary.json").write_text(json.dumps(summary))
-    print(f"scored {len(cards)} companies, {len(ranked)} ranked, magic formula universe {len(combined)}")
-
+    return cards, summary
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=["fetch", "score"])
     ap.add_argument("cache")
     ap.add_argument("out", nargs="?")
-    ap.add_argument("--universe", type=int, default=800)
-    ap.add_argument("--budget", type=int, default=800)
+    ap.add_argument("--universe", type=int, default=100000)
+    ap.add_argument("--budget", type=int, default=100000)
     ap.add_argument("--rate", type=float, default=1.0)
     a = ap.parse_args()
     if a.cmd == "fetch":

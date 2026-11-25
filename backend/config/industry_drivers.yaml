@@ -22,7 +22,7 @@ industries:
     not_tracked: ["Insurance penetration and new business premium growth (IRDAI monthly data)"]
   capital_markets:
     label: Asset managers, exchanges & brokers
-    match: [asset management, capital market, stock exchange, broking, depositor, registrar, exchange]
+    match: [asset management, capital market, stock exchange, broking, broker, depositor, registrar, exchange]
     name_match: [asset management, " amc ", depository, " exchange "]
     nse_sectors: []
     drivers:
@@ -63,7 +63,7 @@ industries:
     not_tracked: []
   cement:
     label: Cement
-    match: [cement]
+    match: [cement, construction material]
     nse_sectors: [Construction Materials]
     drivers:
       - {series: iip_cement, good: up, why: "Rising cement output shows demand is growing."}
@@ -115,7 +115,7 @@ industries:
     not_tracked: ["Rural wages and tractor sales (no free monthly series)"]
   fmcg:
     label: FMCG (everyday consumer goods)
-    match: [fmcg, food, beverage, personal care, tobacco, consumer food, tea, dairy, edible]
+    match: [fmcg, consumer food, food, tobacco, tea, coffee, beverage, brewer, household product, personal care]
     nse_sectors: [Fast Moving Consumer Goods]
     drivers:
       - {series: cpi_food, good: down, why: "High food inflation squeezes household budgets and raises raw material costs."}
@@ -132,7 +132,7 @@ industries:
     not_tracked: ["US generic drug pricing (follow the news panel)"]
   capital_goods:
     label: Capital goods & defence
-    match: [capital goods, engineering, defence, defense, electrical equipment, heavy electrical, industrial machinery, cables]
+    match: [capital goods, engineering, defence, defense, heavy electrical, industrial machinery, aerospace, cable, construction, infrastructure developer, electric equipment, electrical equipment, bearing, compressor, forging, casting, fastener, welding, diesel engine, ship building, railways wagon]
     nse_sectors: [Capital Goods, Construction]
     drivers:
       - {series: iip_capital_goods, good: up, why: "Rising capital goods output shows companies are investing."}
@@ -152,7 +152,7 @@ industries:
     not_tracked: []
   realty:
     label: Real estate
-    match: [realty, real estate, housing, construction]
+    match: [realty, real estate]
     nse_sectors: [Realty]
     drivers:
       - {series: india_call_rate, good: down, why: "Home loans get cheaper when rates fall."}
@@ -180,7 +180,7 @@ industries:
     not_tracked: []
   consumer_durables:
     label: Consumer durables
-    match: [durable, appliance, electronics, consumer electric]
+    match: [durable, appliance, electronics, consumer electric, air conditioner, watches]
     nse_sectors: [Consumer Durables]
     drivers:
       - {series: iip_durables, good: up, why: "Rising durables output shows households are buying."}
