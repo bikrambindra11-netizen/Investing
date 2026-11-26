@@ -89,13 +89,14 @@ def main() -> None:
                 if px is not None and ((s["direction"] == "long" and px <= s["stop"]) or (s["direction"] == "short" and px >= s["stop"])):
                     status = "stop level already broken: setup failed"
                 setups.append({"isin": isin, "symbol": sym, "tf": a[tf]["tf"], "tf_key": tf, "as_of": a[tf]["as_of"], "price": px, "status": status,
+                               "entry": s.get("entry"), "tf_passed": s.get("tf_passed"), "tf_checks": s.get("tf_checks"),
                                "other_setups": same, "trend_agrees_on": trend_agree,
                                **{k: s[k] for k in ("direction", "type", "entry_zone", "stop", "targets", "reward_risk", "reasons", "agree", "of")},
                                "both_timeframes": both, "daily_trend": a["daily_trend"], "caution": a[tf]["caution"]})
         if not found:
             none.append({"isin": isin, "symbol": sym, "price": a.get("live_price"), "wait": a["m15"]["verdict"],
                          "trends": {l: (a.get(t) or {}).get("trend") for t, l in intraday.TF_ORDER}})
-    setups.sort(key=lambda s: (-len(s["trend_agrees_on"]), -s["agree"], -(s["reward_risk"] or 0)))
+    setups.sort(key=lambda s: (not s["entry"], -(s["tf_passed"] or 0), -s["agree"], -(s["reward_risk"] or 0)))
     out.mkdir(parents=True, exist_ok=True)
     for old in out.glob("*.json"):
         old.unlink()

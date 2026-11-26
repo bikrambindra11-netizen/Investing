@@ -98,14 +98,33 @@ def analyse_all(c1: list[dict], c5: list[dict], c15: list[dict], daily: list[dic
     for k, label in TF_ORDER:
         c, htf = bars[k]
         out[k] = analyse_tf(c[-400:], label, dt, htf=htf) if c else {"available": False, "reason": "No candles."}
+    # The 7 other timeframes must all agree before a setup counts as an entry point
+    for k, label in TF_ORDER:
+        a = out[k]
+        s = a.get("setup") if a.get("available") else None
+        if not s:
+            continue
+        want = "up" if s["direction"] == "long" else "down"
+        checks = [{"tf": l2, "trend": (out[k2].get("trend") if out[k2].get("available") else None),
+                   "ok": out[k2].get("available") and out[k2].get("trend") == want} for k2, l2 in TF_ORDER if k2 != k]
+        n_ok = sum(c["ok"] for c in checks)
+        s["tf_checks"] = checks
+        s["tf_passed"] = n_ok
+        s["entry"] = n_ok == len(checks)
+        if not s["entry"]:
+            failed = [f"{c['tf']} ({c['trend'] or 'n/a'})" for c in checks if not c["ok"]]
+            a["verdict"] = (f"Setup forming ({s['direction']} {s['type'].lower()}) but NOT an entry: only {n_ok} of {len(checks)} other timeframes trend "
+                            f"{want}. Not fulfilled: {', '.join(failed)}.")
+        else:
+            a["verdict"] = a["verdict"].replace("Entry point:", "Entry point (all 8 timeframes agree):", 1)
     # How the timeframes line up
     trends = {label: (out[k].get("trend") if out[k].get("available") else None) for k, label in TF_ORDER}
     ups = [l for l, t in trends.items() if t == "up"]
     downs = [l for l, t in trends.items() if t == "down"]
-    found = [(label, out[k]["setup"]) for k, label in TF_ORDER if out[k].get("available") and out[k].get("setup")]
+    found = [(label, out[k]["setup"]) for k, label in TF_ORDER if out[k].get("available") and (out[k].get("setup") or {}).get("entry")]
     out["alignment"] = {"trends": trends, "up": ups, "down": downs,
                         "summary": (f"Trend up on {', '.join(ups) or 'none'}; down on {', '.join(downs) or 'none'}. "
-                                    + (f"Entry points on: {', '.join(f'{l} ({s['direction']})' for l, s in found)}." if found else "No entry point on any timeframe right now."))}
+                                    + (f"Entry points (all timeframes agree) on: {', '.join(f'{l} ({s['direction']})' for l, s in found)}." if found else "No entry point with all 8 timeframes agreeing right now."))}
     out["combined"] = out["alignment"]["summary"]
     return out
 
