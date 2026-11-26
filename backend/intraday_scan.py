@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo
 os.environ.setdefault("RUN_JOBS", "false")
 
 from backend.app import charts, derivatives, intraday, jobs  # noqa: E402
+from backend.app.db import init_db  # noqa: E402
 from backend.build_cards import bucket  # noqa: E402
 from backend.sources import upstox_candles  # noqa: E402
 
@@ -40,6 +41,7 @@ def one(key: str, sym: str):
 
 
 def main() -> None:
+    init_db()  # a fresh machine has no local cache tables yet
     out = Path(sys.argv[1]) / "intraday"
     mx = int(sys.argv[sys.argv.index("--max") + 1]) if "--max" in sys.argv else 1000
     uni = [(k, v["symbol"]) for k, v in derivatives.fno_universe().items() if k.startswith("NSE_EQ")][:mx]
