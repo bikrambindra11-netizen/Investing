@@ -28,16 +28,31 @@ def z(o) -> str:
     return base64.b64encode(gzip.compress(json.dumps(o, separators=(",", ":"), default=str).encode(), 9)).decode()
 
 
+KEEP = {"m1": 240, "m5": 200, "m15": 160, "m30": 120, "h1": 100, "d1": 260, "w1": 156, "mo1": 120}
+
+
+def pack(rows, n):
+    return [[b["t"][:16].replace("T", " "), round(b["open"], 2), round(b["high"], 2), round(b["low"], 2), round(b["close"], 2), b["volume"]] for b in rows[-n:]]
+
+
 def one(key: str, sym: str):
     try:
-        c = charts.candles(key, "15m")
+        c1, c5, c15 = charts.candles(key, "1m"), charts.candles(key, "5m"), charts.candles(key, "15m")
         d, _ = upstox_candles.daily(key, jobs.today_ist())
-        a = intraday.analyse(c, d)
-        bars15 = [[b["t"][:16], b["open"], b["high"], b["low"], b["close"], b["volume"]] for b in c[-160:]]
-        bars30 = [[b["t"][:16], b["open"], b["high"], b["low"], b["close"], b["volume"]] for b in intraday.to_30m(c)[-120:]]
-        return key, sym, a, bars15, bars30
+        # today's daily bar from the intraday candles (the daily history ends yesterday)
+        today = jobs.today_ist().isoformat()
+        tod = [b for b in c15 if b["t"][:10] == today]
+        if tod and (not d or d[-1]["date"] < today):
+            d = d + [{"date": today, "open": tod[0]["open"], "high": max(b["high"] for b in tod), "low": min(b["low"] for b in tod),
+                      "close": (c1 or tod)[-1]["close"], "volume": sum(b["volume"] for b in tod)}]
+        a = intraday.analyse_all(c1, c5, c15, d)
+        dbars = [{"t": x["date"] + "T09:15:00+05:30", **x} for x in d]
+        bars = {"m1": pack(c1, KEEP["m1"]), "m5": pack(c5, KEEP["m5"]), "m15": pack(c15, KEEP["m15"]), "m30": pack(intraday.to_30m(c15), KEEP["m30"]),
+                "h1": pack(intraday.to_60m(c15), KEEP["h1"]), "d1": pack(dbars, KEEP["d1"]), "w1": pack(intraday.to_period(dbars, "W"), KEEP["w1"]),
+                "mo1": pack(intraday.to_period(dbars, "M"), KEEP["mo1"])}
+        return key, sym, a, bars
     except Exception as e:  # one stock failing must not stop the scan
-        return key, sym, {"error": str(e)}, [], []
+        return key, sym, {"error": str(e)}, {}
 
 
 def main() -> None:
@@ -48,18 +63,19 @@ def main() -> None:
     with ThreadPoolExecutor(3) as ex:
         res = list(ex.map(lambda kv: one(*kv), uni))
     setups, none, charts_ = [], [], {}
-    for key, sym, a, b15, b30 in res:
+    for key, sym, a, bars in res:
         isin = key.split("|")[1]
         if "error" in a or not a.get("m15", {}).get("available"):
             continue
-        charts_[isin] = {"symbol": sym, "a": a, "b15": b15, "b30": b30}
+        charts_[isin] = {"symbol": sym, "a": a, "bars": bars}
         found = False
-        for tf in ("m15", "m30"):
-            s = a[tf].get("setup")
+        for tf, _label in intraday.TF_ORDER:
+            s = (a.get(tf) or {}).get("setup")
             if s:
                 found = True
-                other = a["m30" if tf == "m15" else "m15"]
-                both = (other.get("setup") or {}).get("direction") == s["direction"]
+                same = [l for t, l in intraday.TF_ORDER if t != tf and ((a.get(t) or {}).get("setup") or {}).get("direction") == s["direction"]]
+                trend_agree = [l for t, l in intraday.TF_ORDER if t != tf and (a.get(t) or {}).get("trend") == ("up" if s["direction"] == "long" else "down")]
+                both = bool(same)
                 px, atr = a.get("live_price"), (a[tf]["ind"] or {}).get("atr") or 0
                 lo, hi = s["entry_zone"]
                 if px is None:
@@ -72,27 +88,45 @@ def main() -> None:
                     status = "price has moved against the setup, toward the stop"
                 if px is not None and ((s["direction"] == "long" and px <= s["stop"]) or (s["direction"] == "short" and px >= s["stop"])):
                     status = "stop level already broken: setup failed"
-                setups.append({"isin": isin, "symbol": sym, "tf": a[tf]["tf"], "as_of": a[tf]["as_of"], "price": px, "status": status,
+                setups.append({"isin": isin, "symbol": sym, "tf": a[tf]["tf"], "tf_key": tf, "as_of": a[tf]["as_of"], "price": px, "status": status,
+                               "other_setups": same, "trend_agrees_on": trend_agree,
                                **{k: s[k] for k in ("direction", "type", "entry_zone", "stop", "targets", "reward_risk", "reasons", "agree", "of")},
                                "both_timeframes": both, "daily_trend": a["daily_trend"], "caution": a[tf]["caution"]})
         if not found:
-            none.append({"isin": isin, "symbol": sym, "price": a.get("live_price"), "wait": a["m15"]["verdict"], "trend15": a["m15"]["trend"], "trend30": a["m30"].get("trend")})
-    setups.sort(key=lambda s: (not s["both_timeframes"], -s["agree"], -(s["reward_risk"] or 0)))
+            none.append({"isin": isin, "symbol": sym, "price": a.get("live_price"), "wait": a["m15"]["verdict"],
+                         "trends": {l: (a.get(t) or {}).get("trend") for t, l in intraday.TF_ORDER}})
+    setups.sort(key=lambda s: (-len(s["trend_agrees_on"]), -s["agree"], -(s["reward_risk"] or 0)))
     out.mkdir(parents=True, exist_ok=True)
     for old in out.glob("*.json"):
         old.unlink()
-    n = max(1, len(charts_) // 15 + 1)
-    groups = {}
-    for i, c in charts_.items():
-        groups.setdefault(bucket(i, n), {})[i] = c
-    for k in range(n):
-        (out / f"c{k:02d}.json").write_text(json.dumps({"z": z(groups.get(k, {}))}))
+    n = max(1, len(charts_) // 3 + 1)
+    while True:  # every document under the database's 256 KiB limit
+        groups = {}
+        for i, c in charts_.items():
+            groups.setdefault(bucket(i, n), {})[i] = c
+        blobs = {k: json.dumps({"z": z(groups.get(k, {}))}) for k in range(n)}
+        if max(len(b) for b in blobs.values()) <= 240_000:
+            break
+        n += max(1, n // 8)
+    for k, b in blobs.items():
+        (out / f"c{k:02d}.json").write_text(b)
     now = datetime.now(IST)
     live = {"generated_at": now.isoformat(timespec="seconds"), "chunks": n, "scanned": len(charts_), "setups": setups, "no_entry": none,
-            "method": "Every F&O stock, on closed 15-min and 30-min candles. Breakout: a candle closing beyond a key level (previous day high/low, VWAP, pivots, swing levels, pattern lines) on 1.5× volume with ADX ≥ 20 and RSI in the trend's range. Pullback: an intraday trend (20 EMA vs 50 EMA, VWAP, Dow structure) with price back at the 20 EMA, VWAP or support and a candle turning with the trend. Entry zone, stop where the setup is wrong, targets at the next levels; shown only when reward:risk ≥ 1.5. Confirmations: daily trend, Supertrend, MACD.",
+            "method": "Every F&O stock on every timeframe (1-min, 5-min, 15-min, 30-min, 1-hour, daily, weekly, monthly), on closed candles. Breakout: a candle closing beyond a key level (previous day high/low, VWAP, pivots, swing levels, pattern lines) on 1.5× volume with ADX ≥ 20 and RSI in the trend's range. Pullback: an intraday trend (20 EMA vs 50 EMA, VWAP, Dow structure) with price back at the 20 EMA, VWAP or support and a candle turning with the trend. Entry zone, stop where the setup is wrong, targets at the next levels; shown only when reward:risk ≥ 1.5. Confirmations: daily trend, Supertrend, MACD.",
             "note": "Chart analysis for you to decide on; no trades are placed and no position sizes are given."}
     (out / "live.json").write_text(json.dumps({"z": z(live), "generated_at": live["generated_at"], "chunks": n}))
-    print(f"scanned {len(charts_)} of {len(uni)}; {len(setups)} setups; {n} chart documents")
+    files = sorted(out.glob("c*.json")) + [out / "live.json"]
+    batches, cur, size = [], [], 0
+    for f in files:
+        sz = f.stat().st_size
+        if cur and (size + sz > 900_000 or len(cur) >= 40 or f.name == "live.json"):
+            batches.append(cur)
+            cur, size = [], 0
+        cur.append(f.name[:-5])
+        size += sz
+    batches.append(cur)
+    (out.parent / "batches.json").write_text(json.dumps(batches))
+    print(f"scanned {len(charts_)} of {len(uni)}; {len(setups)} setups; {n} chart documents; {len(batches)} write batches (see batches.json)")
 
 
 if __name__ == "__main__":

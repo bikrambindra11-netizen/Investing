@@ -37,6 +37,79 @@ def to_30m(c15: list[dict]) -> list[dict]:
     return out
 
 
+def to_60m(c15: list[dict]) -> list[dict]:
+    """Four 15-minute bars -> one hourly bar (09:15-10:15, 10:15-11:15, ...)."""
+    out, cur = [], None
+    for b in c15:
+        hh, mm = int(b["t"][11:13]), int(b["t"][14:16])
+        key = (b["t"][:10], ((hh * 60 + mm) - (9 * 60 + 15)) // 60)
+        if cur and cur["_k"] == key:
+            cur.update(high=max(cur["high"], b["high"]), low=min(cur["low"], b["low"]), close=b["close"], volume=cur["volume"] + b["volume"])
+        else:
+            cur = {**b, "_k": key}
+            out.append(cur)
+    for x in out:
+        x.pop("_k", None)
+    return out
+
+
+def to_period(daily: list[dict], kind: str) -> list[dict]:
+    """Daily bars -> weekly ('W') or monthly ('M') bars, dated by their first session."""
+    from datetime import date as _d
+    out, cur = [], None
+    for b in daily:
+        d = _d.fromisoformat(b["date"][:10])
+        key = d.isocalendar()[:2] if kind == "W" else (d.year, d.month)
+        if cur and cur["_k"] == key:
+            cur.update(high=max(cur["high"], b["high"]), low=min(cur["low"], b["low"]), close=b["close"], volume=cur["volume"] + (b.get("volume") or 0))
+        else:
+            cur = {"t": b["date"][:10] + "T09:15:00+05:30", "date": b["date"][:10], "open": b["open"], "high": b["high"], "low": b["low"],
+                   "close": b["close"], "volume": b.get("volume") or 0, "_k": key}
+            out.append(cur)
+    for x in out:
+        x.pop("_k", None)
+    return out
+
+
+TF_ORDER = [("m1", "1-min"), ("m5", "5-min"), ("m15", "15-min"), ("m30", "30-min"), ("h1", "1-hour"), ("d1", "daily"), ("w1", "weekly"), ("mo1", "monthly")]
+
+
+def analyse_all(c1: list[dict], c5: list[dict], c15: list[dict], daily: list[dict], now: datetime | None = None) -> dict:
+    """Every timeframe from 1 minute to monthly: the map and the entry verdict for each, and how they line up."""
+    from zoneinfo import ZoneInfo
+    now = now or datetime.now(ZoneInfo("Asia/Kolkata"))
+    live = (c1 or c15)[-1]["close"] if (c1 or c15) else None
+    dbars = [{"t": d["date"][:10] + "T09:15:00+05:30", **d} for d in (daily or [])]
+    today = now.date().isoformat()
+    closed_d = [b for b in dbars if b["date"][:10] < today or now.hour * 60 + now.minute >= 15 * 60 + 30]
+    wk, mo = to_period(dbars, "W"), to_period(dbars, "M")
+    dt = None
+    if len(dbars) >= 50:
+        cl = [d["close"] for d in dbars]
+        s20, s50 = sum(cl[-20:]) / 20, sum(cl[-50:]) / 50
+        dt = "up" if cl[-1] > s20 > s50 else "down" if cl[-1] < s20 < s50 else "sideways"
+    bars = {
+        "m1": (_closed(c1, 1, now), False), "m5": (_closed(c5, 5, now), False), "m15": (_closed(c15, 15, now), False),
+        "m30": (_closed(to_30m(c15), 30, now), False), "h1": (_closed(to_60m(c15), 60, now), False),
+        "d1": (closed_d, True), "w1": (wk[:-1] if wk else wk, True), "mo1": (mo[:-1] if mo else mo, True),
+    }
+    out = {"daily_trend": dt, "live_price": live, "generated_at": now.isoformat(timespec="seconds"),
+           "note": "Chart analysis only: entry zone, stop (where the setup is wrong) and targets at the next levels. You decide and place any trade yourself."}
+    for k, label in TF_ORDER:
+        c, htf = bars[k]
+        out[k] = analyse_tf(c[-400:], label, dt, htf=htf) if c else {"available": False, "reason": "No candles."}
+    # How the timeframes line up
+    trends = {label: (out[k].get("trend") if out[k].get("available") else None) for k, label in TF_ORDER}
+    ups = [l for l, t in trends.items() if t == "up"]
+    downs = [l for l, t in trends.items() if t == "down"]
+    found = [(label, out[k]["setup"]) for k, label in TF_ORDER if out[k].get("available") and out[k].get("setup")]
+    out["alignment"] = {"trends": trends, "up": ups, "down": downs,
+                        "summary": (f"Trend up on {', '.join(ups) or 'none'}; down on {', '.join(downs) or 'none'}. "
+                                    + (f"Entry points on: {', '.join(f'{l} ({s['direction']})' for l, s in found)}." if found else "No entry point on any timeframe right now."))}
+    out["combined"] = out["alignment"]["summary"]
+    return out
+
+
 def _ema(x, n):
     k, out, e = 2 / (n + 1), [], None
     for v in x:
@@ -69,7 +142,8 @@ def _days(c):
     return [days[k] for k in sorted(days)]
 
 
-def analyse_tf(c: list[dict], tf: str, daily_trend: str | None = None) -> dict:
+def analyse_tf(c: list[dict], tf: str, daily_trend: str | None = None, htf: bool = False) -> dict:
+    """htf: daily/weekly/monthly bars (no VWAP; 'previous bar' instead of previous day; no session-time cautions)."""
     """Everything mapped on one timeframe, plus the setup verdict."""
     c = [b for b in c if b.get("volume") is not None]
     if len(c) < 60:
@@ -86,10 +160,14 @@ def analyse_tf(c: list[dict], tf: str, daily_trend: str | None = None) -> dict:
     _, st_dirs = supertrend(c)
     vol_avg = sum(b["volume"] for b in c[-21:-1]) / 20
     vol_ratio = round(c[-1]["volume"] / vol_avg, 2) if vol_avg else None
-    vwap = _vwap_today(c)
-    days = _days(c)
+    vwap = None if htf else _vwap_today(c)
+    if htf:
+        days = [{"date": b["t"][:10], "open": b["open"], "high": b["high"], "low": b["low"], "close": b["close"]} for b in c[-2:]]
+    else:
+        days = _days(c)
     prev = days[-2] if len(days) >= 2 else None
     today = days[-1]
+    pname = "previous bar" if htf else "previous day"
     pivots = None
     if prev:
         p = (prev["high"] + prev["low"] + prev["close"]) / 3
@@ -107,8 +185,8 @@ def analyse_tf(c: list[dict], tf: str, daily_trend: str | None = None) -> dict:
     # Every level that matters, with its name
     lv = []
     if prev:
-        lv += [(prev["high"], "previous day high"), (prev["low"], "previous day low"), (prev["close"], "previous close")]
-    lv += [(today["open"], "today's open")]
+        lv += [(prev["high"], f"{pname} high"), (prev["low"], f"{pname} low"), (prev["close"], "previous close")]
+    lv += [(today["open"], "this bar's open" if htf else "today's open")]
     if vwap:
         lv.append((vwap, "VWAP"))
     if pivots:
@@ -122,8 +200,9 @@ def analyse_tf(c: list[dict], tf: str, daily_trend: str | None = None) -> dict:
     above = [(v, n) for v, n in lv if v > price * 1.0005]
     below = [(v, n) for v, n in lv if v < price * 0.9995][::-1]
 
-    up = e20[-1] > e50[-1] and price > (vwap or price)
-    down = e20[-1] < e50[-1] and price < (vwap or price)
+    ref = vwap if vwap else e20[-1]  # intraday: price vs VWAP; daily and above: price vs the 20 EMA
+    up = e20[-1] > e50[-1] and price > ref
+    down = e20[-1] < e50[-1] and price < ref
     dow = (pat.get("dow") or {}).get("trend", "")
     last, prevb = c[-1], c[-2]
     bull_candle = last["close"] > last["open"] or any(x["date"] == last["date"] and x["pattern"] in ("Hammer", "Bullish engulfing", "Morning star", "Bullish harami", "Piercing line") for x in cand)
@@ -163,9 +242,13 @@ def analyse_tf(c: list[dict], tf: str, daily_trend: str | None = None) -> dict:
             return None
         e_mid = (entry[0] + entry[1]) / 2
         risk = abs(e_mid - stop)
+        if not risk or risk > 2.5 * atr:  # stop too far away for this timeframe: not a usable setup
+            return None
         tgt_levels = [v for v, n in (above if long else below) if (v - e_mid) * sgn > 0.5 * risk]
         t1 = tgt_levels[0] if tgt_levels else round(e_mid + sgn * 2 * risk, 2)
         t2 = tgt_levels[1] if len(tgt_levels) > 1 else round(e_mid + sgn * 3 * risk, 2)
+        if t1 <= 0 or t2 <= 0:
+            return None
         rr = round(abs(t1 - e_mid) / risk, 2) if risk else None
         conf = []
         if daily_trend:
@@ -196,27 +279,28 @@ def analyse_tf(c: list[dict], tf: str, daily_trend: str | None = None) -> dict:
         if ns:
             wait.append(f"a {tf} close below {ns[1]} ₹{ns[0]:,.2f} on volume (breakdown)")
         if up:
-            wait.append(f"a pull back to the 20 EMA ₹{e20[-1]:,.2f} / VWAP that holds (pullback entry)")
+            wait.append(f"a pull back to the 20 EMA ₹{e20[-1]:,.2f}{'' if htf else ' / VWAP'} that holds (pullback entry)")
         elif down:
-            wait.append(f"a bounce to the 20 EMA ₹{e20[-1]:,.2f} / VWAP that fails (pullback short)")
+            wait.append(f"a bounce to the 20 EMA ₹{e20[-1]:,.2f}{'' if htf else ' / VWAP'} that fails (pullback short)")
         weak = [s for s in setups if not s["valid"]]
         verdict = ("No entry now" + (f": a {weak[0]['type'].lower()} {weak[0]['direction']} is forming but reward:risk is only {weak[0]['reward_risk']}" if weak else "")
                    + ". Wait for " + "; or ".join(wait) + ".")
     caution = []
-    if hhmm < "09:30":
+    if not htf and hhmm < "09:30":
         caution.append("first 15 minutes: moves are noisy")
-    if hhmm >= "15:00":
+    if not htf and hhmm >= "15:00":
         caution.append("last 30 minutes of the session")
     if atr and price and atr / price * 100 < 0.15:
         caution.append("very low volatility: targets may not be reached")
     return {
-        "available": True, "tf": tf, "as_of": c[-1]["t"][:16].replace("T", " "), "price": price,
+        "available": True, "tf": tf, "as_of": (c[-1]["t"][:10] + " (bar start)") if htf else c[-1]["t"][:16].replace("T", " "), "price": price,
         "verdict": verdict, "setup": best, "setups": setups, "caution": caution,
         "trend": "up" if up else "down" if down else "sideways",
         "dow": dow + (f" — {(pat.get('dow') or {}).get('break')}" if (pat.get("dow") or {}).get("break") else ""),
         "ind": {"ema20": round(e20[-1], 2), "ema50": round(e50[-1], 2), "vwap": round(vwap, 2) if vwap else None, "rsi": round(rsi, 1) if rsi else None,
                 "macd_hist": round(hist[-1], 3), "adx": ad, "supertrend": "up" if st_dirs[-1] == 1 else "down", "atr": round(atr, 2) if atr else None,
                 "volume_ratio": vol_ratio},
+        "htf": htf,
         "levels": {"above": [[v, n] for v, n in above[:6]], "below": [[v, n] for v, n in below[:6]], "pivots": pivots,
                    "prev_day": prev, "today_open": today["open"]},
         "patterns": pat["patterns"], "candles": [x for x in cand][-3:],
