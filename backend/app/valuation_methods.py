@@ -273,11 +273,14 @@ def commodity_position(series_id: str) -> dict | None:
             "change_12m_pct": chg, "source": f"{cfg.get('source', '').upper()} {cfg.get('ref', '')}".strip()}
 
 
-def cycle_position(industry: str, fin: dict, quarterly: dict | None = None, b: dict | None = None) -> dict:
-    """Where a cyclical company stands: margin and earnings against their own range, commodity prices
-    against theirs, and Lynch's low-P/E-at-the-peak test. Returns a stage with the evidence."""
+def cycle_position(industry: str, fin: dict, quarterly: dict | None = None, b: dict | None = None,
+                   products: list[str] | None = None, commodity: str | None = None) -> dict:
+    """Where a commodity business stands in its cycle: the price of what it sells against its own range (the
+    commodity cycle itself), its margin and earnings against their range, and Lynch's low-P/E-at-the-peak test.
+    `products`: price series of what the company sells (e.g. zinc for a zinc miner). Without `commodity`,
+    falls back to the industry setting."""
     g = guide(industry)
-    if not g["cyclical"]:
+    if commodity is None and not g["cyclical"]:
         return {"cyclical": False, "note": f"{g['kind']}: not treated as a cyclical business."}
     rows = [r for r in (fin.get("periods") or []) if r.get("operating_margin_pct") is not None]
     ev, score, n = [], 0, 0
@@ -304,7 +307,12 @@ def cycle_position(industry: str, fin: dict, quarterly: dict | None = None, b: d
             ev.append(f"Latest EPS is {ratio:.2f}× its {len(eps_rows)}-year average.")
             score += max(-1, min(1, (ratio - 1) * 2.5))
             n += 1
-    comm = [c for c in (commodity_position(s) for s in g["cycle_signals"]) if c]
+    sold = [c for c in (commodity_position(x) for x in (products or [])) if c]
+    for c in sold:  # the price of what the company sells is the cycle itself: counts double
+        if c["position_pct"] is not None:
+            score += 2 * (c["position_pct"] / 100 * 2 - 1)
+            n += 2
+    comm = sold + [c for c in (commodity_position(x) for x in g["cycle_signals"] if x not in (products or [])) if c]
     for c in comm:
         if c["position_pct"] is not None:
             ev.append(f"{c['label']}: {c['latest']:,} {c['unit']} ({c['as_of']}), {c['position_pct']}% of the way up its range of {c['low']:,}–{c['high']:,}"
@@ -320,8 +328,9 @@ def cycle_position(industry: str, fin: dict, quarterly: dict | None = None, b: d
         lynch = "Low P/E while profits are near their peak: Lynch warns this is often when cyclicals are most expensive."
     elif b and b.get("pe") and stage == "near the bottom of its cycle" and b["pe_sector"] and b["pe"] > b["pe_sector"]:
         lynch = "High P/E while profits are depressed: for cyclicals this is often near the bottom, when earnings later recover."
-    return {"cyclical": True, "stage": stage, "evidence": ev, "commodities": comm, "lynch": lynch,
-            "how": "The stage comes from the company's own margins and earnings against their range; commodity prices are shown beside it as context (for some companies they are a cost, for others the selling price).",
+    return {"cyclical": True, "stage": stage, "evidence": ev, "commodities": comm, "lynch": lynch, "commodity": commodity,
+            "how": (f"A {commodity} business: the stage weighs the price of what it sells against its range (double weight) with its own margin and earnings against theirs." if commodity
+                    else "The stage comes from the company's own margins and earnings against their range."),
             "note": f"Only {len(rows)} years of company data are available from Upstox, so 'top' and 'bottom' are within that window; a full cycle is often 5–10 years."}
 
 

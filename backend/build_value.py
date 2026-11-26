@@ -82,6 +82,40 @@ FIT = {
 }
 
 
+# Only businesses whose earnings follow a commodity price have a cycle. (Upstox sector words, name words) -> (commodity, price series of what they sell)
+COMMODITY = [
+    (["zinc"], [], ("zinc", ["zinc"])),
+    ([], ["hindustan zinc"], ("zinc", ["zinc"])),
+    ([], ["hindustan copper"], ("copper", ["copper"])),
+    (["copper"], [], ("copper", ["copper"])),
+    ([], ["national aluminium", "hindalco", "vedanta"], ("aluminium", ["aluminium"])),
+    (["aluminium"], [], ("aluminium", ["aluminium"])),
+    (["non ferrous"], [], ("non-ferrous metals", ["aluminium", "zinc", "copper"])),
+    ([], ["nmdc", "iron ore", "kiocl", "sandur"], ("iron ore", ["iron_ore"])),
+    ([], ["coal india", "coal"], ("coal", ["coal"])),
+    (["ferro"], [], ("ferro alloys / steel", ["iron_ore"])),
+    (["steel"], [], ("steel", ["iron_ore"])),
+    (["mining", "minerals"], [], ("minerals", ["iron_ore", "coal"])),
+    (["oil exploration", "crude oil"], [], ("crude oil", ["brent"])),
+    (["refiner"], [], ("refining (crude-linked)", [])),
+    (["petrochemical"], [], ("petrochemicals (crude-linked)", [])),
+    (["cement"], [], ("cement", [])),
+    (["construction material"], [], ("cement", [])),
+    (["sugar"], [], ("sugar", [])),
+    (["paper"], [], ("paper", [])),
+]
+
+
+def commodity_of(sector: str | None, name: str | None) -> tuple[str, list[str]] | None:
+    sec, nm = (sector or "").lower(), f" {(name or '').lower()} "
+    if any(w in sec for w in ("steel & iron products",)) and any(w in nm for w in (" tube", " pipe", "apollo")):
+        return None  # pipe and tube makers process steel; their margin is a spread, not the steel cycle
+    for sec_words, name_words, out in COMMODITY:
+        if (sec_words and any(w in sec for w in sec_words)) or (name_words and any(w in nm for w in name_words)):
+            return out
+    return None
+
+
 def metrics(ys: list[dict], fin: dict, kr: dict, price: float | None, v: dict) -> dict:
     """Every ratio in METRICS for one company (None where it cannot be computed)."""
     r = lambda x, n=2: None if x is None else round(x, n)  # noqa: E731
@@ -132,14 +166,14 @@ SECTORS = {
     "gold": {"factors": ["roc", "ey", "mos"], "why": _GREEN},
     "capital_markets": {"factors": ["roc", "ey", "mos"], "why": "Fee businesses on little capital: " + _GREEN},
     "general": {"factors": ["roc", "ey", "mos"], "why": _GREEN},
-    "capital_goods": {"factors": ["roc", "ey", "mos", "cycle"], "why": "Order-book driven and tied to the capex cycle: Magic Formula plus margin of safety, and earlier in the cycle ranks better."},
+    "capital_goods": {"factors": ["roc", "ey", "mos"], "why": "Order-book driven: Magic Formula plus margin of safety."},
     "chemicals": {"factors": ["ey", "mos", "roc", "cycle"], "why": "Partly cyclical: Magic Formula and margin of safety on cycle-average earnings; earlier in the cycle ranks better."},
-    "auto": {"factors": ["ey", "mos", "roc", "cycle"], "why": "Cyclical demand: Magic Formula and margin of safety on cycle-average earnings; earlier in the cycle ranks better."},
+    "auto": {"factors": ["ey", "mos", "roc"], "why": "Cyclical demand: Magic Formula and margin of safety on cycle-average earnings; earlier in the cycle ranks better."},
     "metals": {"factors": ["mos", "ey", "cycle"], "why": "Deep cyclical (The Intelligent Investor; Lynch): value on cycle-average earnings and assets, and earlier in the cycle ranks better; return on capital is ignored because it peaks with prices."},
     "cement": {"factors": ["mos", "ey", "cycle"], "why": "Cyclical and asset-heavy: Graham margin of safety on assets and cycle-average earnings, earnings yield, and earlier in the cycle ranks better."},
     "oil_gas": {"factors": ["mos", "ey", "cycle"], "why": "Commodity-driven: margin of safety on assets and cycle-average cash flow, earnings yield, and earlier in the cycle ranks better."},
-    "textiles": {"factors": ["mos", "ey", "cycle"], "why": "Cyclical, raw-material driven: margin of safety, earnings yield, and earlier in the cycle ranks better."},
-    "realty": {"factors": ["mos", "cycle"], "why": "Asset-based and cyclical: Graham's book-value margin of safety, and earlier in the cycle ranks better; the Magic Formula does not fit lumpy profits."},
+    "textiles": {"factors": ["mos", "ey"], "why": "Cyclical, raw-material driven: margin of safety, earnings yield, and earlier in the cycle ranks better."},
+    "realty": {"factors": ["mos"], "why": "Asset-based and cyclical: Graham's book-value margin of safety, and earlier in the cycle ranks better; the Magic Formula does not fit lumpy profits."},
     "banks": {"factors": ["mos", "roe"], "why": "Greenblatt leaves out banks. Graham/Buffett: margin of safety on book value and distributable profit, plus return on equity."},
     "nbfc": {"factors": ["mos", "roe"], "why": "Greenblatt leaves out lenders. Graham/Buffett: margin of safety on book value and distributable profit, plus return on equity."},
     "insurance": {"factors": ["mos", "roe"], "why": "Greenblatt leaves out insurers. Margin of safety on book value and distributable profit, plus return on equity."},
@@ -178,11 +212,12 @@ def main() -> None:
         kr = analysis.key_ratios(f)
         v = value_models.value(ys, price, bond, ind in FIN, analysis.graham(ind, fin, f, price) if fin["periods"] else [],
                                pe=(kr.get("P/E") or {}).get("company"), pb=(kr.get("P/B") or {}).get("company"), industry=ind)
-        if v.get("available") and valuation_methods.guide(ind)["cyclical"]:
+        comm = commodity_of(prof.get("sector"), r["name"])
+        if v.get("available") and comm:
             q_rows = analysis._table(((f.get("income_q") or {}).get("data") or {}).get("income_statement"), "category")
             quarterly = {k: [{"period": p, "value": x} for p, x in sorted(vv.items(), key=lambda kv: analysis.period_end(kv[0]) or 0, reverse=True)][:4] for k, vv in q_rows.items()}
-            cyc = valuation_methods.cycle_position(ind, fin, quarterly, valuation_methods._basics(fin, kr, price))
-            v["cycle"] = {k: cyc.get(k) for k in ("stage", "evidence", "lynch", "note", "how")}
+            cyc = valuation_methods.cycle_position(ind, fin, quarterly, valuation_methods._basics(fin, kr, price), products=comm[1], commodity=comm[0])
+            v["cycle"] = {k: cyc.get(k) for k in ("stage", "evidence", "lynch", "note", "how", "commodity")}
         if v.get("available"):
             eve = (kr.get("EV/EBITDA") or {}).get("company")
             v["magic"]["earnings_yield_pct"] = round(100 / eve, 1) if eve and eve > 0 else None
