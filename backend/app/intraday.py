@@ -98,9 +98,38 @@ def analyse_all(c1: list[dict], c5: list[dict], c15: list[dict], daily: list[dic
     for k, label in TF_ORDER:
         c, htf = bars[k]
         out[k] = analyse_tf(c[-400:], label, dt, htf=htf) if c else {"available": False, "reason": "No candles."}
+    # Early warning: the same test on the candle still forming (5-min to daily). It becomes an entry only if the
+    # candle closes like this, so it is shown with the time the candle closes.
+    forming_bars = {"m5": (c5, 5), "m15": (c15, 15), "m30": (to_30m(c15), 30), "h1": (to_60m(c15), 60)}
+    if dbars and dbars[-1]["date"][:10] == today and not (now.hour * 60 + now.minute >= 15 * 60 + 30):
+        forming_bars["d1"] = (dbars, None)
+    from datetime import timedelta
+    for k, (c, mins) in forming_bars.items():
+        if not c or not out[k].get("available"):
+            continue
+        last = c[-1]
+        start = datetime.fromisoformat(last["t"])
+        closes = (start + timedelta(minutes=mins)) if mins else start.replace(hour=15, minute=30)
+        if mins and k == "h1":  # the last hourly slot ends at 15:30
+            closes = min(closes, start.replace(hour=15, minute=30))
+        if closes.timestamp() <= now.timestamp():
+            continue  # the candle has closed: it is in the normal analysis
+        f = analyse_tf(c[-400:], dict(TF_ORDER)[k], dt, htf=(k == "d1"))
+        fs = f.get("setup")
+        if fs and not (out[k].get("setup") and out[k]["setup"]["direction"] == fs["direction"]):
+            fs["closes_at"] = closes.strftime("%H:%M")
+            fs["minutes_left"] = max(0, round((closes.timestamp() - now.timestamp()) / 60))
+            out[k]["forming"] = fs
     # The 7 other timeframes must all agree before a setup counts as an entry point
     for k, label in TF_ORDER:
         a = out[k]
+        f = a.get("forming") if a.get("available") else None
+        if f:
+            want = "up" if f["direction"] == "long" else "down"
+            f["tf_checks"] = [{"tf": l2, "trend": (out[k2].get("trend") if out[k2].get("available") else None),
+                               "ok": out[k2].get("available") and out[k2].get("trend") == want} for k2, l2 in TF_ORDER if k2 != k]
+            f["tf_passed"] = sum(c["ok"] for c in f["tf_checks"])
+            f["entry_if_closes"] = f["tf_passed"] == len(f["tf_checks"])
         s = a.get("setup") if a.get("available") else None
         if not s:
             continue

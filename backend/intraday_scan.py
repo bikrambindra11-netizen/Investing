@@ -62,7 +62,7 @@ def main() -> None:
     uni = [(k, v["symbol"]) for k, v in derivatives.fno_universe().items() if k.startswith("NSE_EQ")][:mx]
     with ThreadPoolExecutor(3) as ex:
         res = list(ex.map(lambda kv: one(*kv), uni))
-    setups, none, charts_ = [], [], {}
+    setups, none, charts_, forming = [], [], {}, []
     for key, sym, a, bars in res:
         isin = key.split("|")[1]
         if "error" in a or not a.get("m15", {}).get("available"):
@@ -93,6 +93,12 @@ def main() -> None:
                                "other_setups": same, "trend_agrees_on": trend_agree,
                                **{k: s[k] for k in ("direction", "type", "entry_zone", "stop", "targets", "reward_risk", "reasons", "agree", "of")},
                                "both_timeframes": both, "daily_trend": a["daily_trend"], "caution": a[tf]["caution"]})
+        for tf, _label in intraday.TF_ORDER:
+            f = (a.get(tf) or {}).get("forming")
+            if f:
+                forming.append({"isin": isin, "symbol": sym, "tf": a[tf]["tf"], "tf_key": tf, "price": a.get("live_price"),
+                                **{k: f[k] for k in ("direction", "type", "entry_zone", "stop", "targets", "reward_risk", "reasons", "agree", "of",
+                                                     "closes_at", "minutes_left", "tf_passed", "tf_checks", "entry_if_closes")}})
         if not found:
             none.append({"isin": isin, "symbol": sym, "price": a.get("live_price"), "wait": a["m15"]["verdict"],
                          "trends": {l: (a.get(t) or {}).get("trend") for t, l in intraday.TF_ORDER}})
@@ -112,7 +118,8 @@ def main() -> None:
     for k, b in blobs.items():
         (out / f"c{k:02d}.json").write_text(b)
     now = datetime.now(IST)
-    live = {"generated_at": now.isoformat(timespec="seconds"), "chunks": n, "scanned": len(charts_), "setups": setups, "no_entry": none,
+    forming.sort(key=lambda f: (not f["entry_if_closes"], -f["tf_passed"], f["minutes_left"]))
+    live = {"generated_at": now.isoformat(timespec="seconds"), "chunks": n, "scanned": len(charts_), "setups": setups, "no_entry": none, "forming": forming,
             "method": "Every F&O stock on every timeframe (1-min, 5-min, 15-min, 30-min, 1-hour, daily, weekly, monthly), on closed candles. Breakout: a candle closing beyond a key level (previous day high/low, VWAP, pivots, swing levels, pattern lines) on 1.5× volume with ADX ≥ 20 and RSI in the trend's range. Pullback: an intraday trend (20 EMA vs 50 EMA, VWAP, Dow structure) with price back at the 20 EMA, VWAP or support and a candle turning with the trend. Entry zone, stop where the setup is wrong, targets at the next levels; shown only when reward:risk ≥ 1.5. Confirmations: daily trend, Supertrend, MACD.",
             "note": "Chart analysis for you to decide on; no trades are placed and no position sizes are given."}
     (out / "live.json").write_text(json.dumps({"z": z(live), "generated_at": live["generated_at"], "chunks": n}))
