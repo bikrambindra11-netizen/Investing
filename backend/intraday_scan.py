@@ -106,7 +106,7 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     for old in out.glob("*.json"):
         old.unlink()
-    n = max(1, len(charts_) // 3 + 1)
+    n = 80  # fixed, so quick runs that only rewrite the list stay consistent with the chart documents
     while True:  # every document under the database's 256 KiB limit
         groups = {}
         for i, c in charts_.items():
