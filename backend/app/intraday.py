@@ -266,6 +266,8 @@ def analyse_tf(c: list[dict], tf: str, daily_trend: str | None = None, htf: bool
         tgt_levels = [v for v, n in (above if long else below) if (v - e_mid) * sgn > 0.5 * risk]
         t1 = tgt_levels[0] if tgt_levels else round(e_mid + sgn * 2 * risk, 2)
         t2 = tgt_levels[1] if len(tgt_levels) > 1 else round(e_mid + sgn * 3 * risk, 2)
+        if (t2 - t1) * sgn <= 0:  # the second target must lie beyond the first
+            t2 = round(t1 + sgn * risk, 2)
         if t1 <= 0 or t2 <= 0:
             return None
         rr = round(abs(t1 - e_mid) / risk, 2) if risk else None
