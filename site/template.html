@@ -117,6 +117,7 @@ footer { font-size: 12px; color: var(--muted); padding-block: 0 30px }
   <nav class="tabs" aria-label="Sections">
     <a href="#market" data-tab="market">Market</a>
     <a href="#investing" data-tab="investing">Investing</a>
+    <a href="#trading" data-tab="trading">Trading (15/30 min)</a>
   </nav>
   <span class="fresh" id="fresh">Loading data…</span>
 </div><div class="wrap"><nav class="sectors" id="sectors" aria-label="Sectors"></nav></div></header>
@@ -378,8 +379,11 @@ async function renderStock(isin) {
         <div class="num ${cls(c.ch)}">${pct(c.ch)}</div><div class="tiny">${c.live ? '<span class="live-dot"></span>' : ""}${esc(c.src || NA)} · ${when(c.at)}</div></div>
     </div>
     <div id="value"><p class="loading">Calculating value…</p></div>
-    <h2 style="margin-top:18px">Trading: chart</h2>
+    <h2 style="margin-top:18px">Trading: 15-min and 30-min</h2>
+    <section class="panel" id="intra"><p class="loading">Loading the intraday chart…</p></section>
+    <h2 style="margin-top:18px">Daily and weekly chart</h2>
     ${techStock(isin) ? candleSection(isin) : `<section class="panel">${series ? `<div class="ranges" id="ranges">${[["1M", 31], ["6M", 183], ["1Y", 366], ["3Y", 1096], ["5Y", 1827]].map(([l, d]) => `<button class="btn ${view.range === d ? "on" : ""}" data-d="${d}">${l}</button>`).join("")}</div><div class="chart" id="chart"></div><p class="tiny">Candlestick chart with levels and patterns is prepared for the 450 most traded stocks.</p>` : `<p class="small">No chart for this stock (thinly traded).</p>`}</section>`}`;
+  intradaySection(isin);
   valueCard(isin).then((vc) => {
     const el = document.getElementById("value"); if (!el || location.hash.slice(7) !== isin) return;
     if (vc === undefined) { el.innerHTML = `<p class="notice">The value is read from this page's database: open the page on claude.ai while signed in.</p>`; return; }
@@ -1182,31 +1186,95 @@ async function drawInvesting() {
 }
 
 // ---------- trading tab (F&O scan)
-function renderTrading() {
-  app().innerHTML = `<div><h1>Market pulse</h1><p class="sub">Where something unusual is happening among the ${int.format(218)} stocks with futures & options: big moves, heavy volume, option build-ups, volatility spikes, key levels and 52-week extremes. Claude reads the news and explains the common threads. Facts and context, not recommendations.</p></div>
-    <section class="live-box"><div class="live-head"><div><h2>Pulse check</h2><p class="sub">Runs live in about 3–5 minutes.</p></div><button class="btn primary" id="scan">Check the market now</button></div><div id="scan-body"></div></section>`;
-  const btn = document.getElementById("scan"), body = document.getElementById("scan-body");
-  btn.addEventListener("click", () => startJob("scans/latest", "SCAN", btn, body));
-  watchDoc("scans/latest", (d, err) => {
-    if (location.hash.slice(1) !== "trading") return;
-    if (err === "nodb") { body.innerHTML = `<p class="tiny">Open this page on claude.ai (signed in) to run it.</p>`; return; }
-    if (!d) { body.innerHTML = `<p class="tiny">Not run yet. Press “Check the market now”.</p>`; return; }
-    const busy = d.status === "queued" || d.status === "working"; btn.disabled = busy; btn.textContent = busy ? "Working…" : "Check again";
-    let h = busy ? `<p class="steps"><span class="spinner"></span>${esc(d.step || "Working…")}</p>` : "";
-    if (d.status === "failed") h += `<p class="notice">It stopped: ${esc(d.error || "unknown error")}</p>`;
-    const sc = d.scan;
-    if (d.commentary) h += `<div class="idea"><div class="name">Claude's overview</div><p style="white-space:pre-wrap;margin:4px 0 0">${esc(d.commentary)}</p></div>`;
-    if (sc && sc.notable) {
-      h += `<p class="small">${sc.scanned} stocks checked ${ago(sc.generated_at)} · ${sc.breadth.up} up, ${sc.breadth.down} down.</p>`;
-      h += sc.notable.map((x) => `<div class="idea" style="margin-top:8px"><div class="name"><a href="#stock-${esc(x.isin)}">${esc(x.symbol)}</a> ₹${price(x.price)} <span class="${cls(x.change_pct)}">${pct(x.change_pct)}</span></div>
-        <ul class="small">${x.flags.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>
-        <p class="tiny">IV ${x.iv ?? NA}% · expected move to expiry ±${x.expected_move_pct ?? NA}% · put/call OI ${x.pcr ?? NA}</p>
-        ${(x.headlines || []).length ? `<p class="tiny">News: ${x.headlines.map((n) => { const u = safeUrl(n.link); return u ? `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(n.title)}</a>` : esc(n.title); }).join(" · ")}</p>` : ""}</div>`).join("");
-      h += `<details class="sec"><summary>All F&O stocks</summary><div class="scroll"><table><thead><tr><th>Stock</th><th class="num">Price</th><th class="num">Change</th><th class="num">Volume vs normal</th><th class="num">IV</th><th class="num">Expected move</th></tr></thead><tbody>${sc.overview.map((x) => `<tr><td><a href="#stock-${esc(x.isin)}">${esc(x.symbol)}</a></td><td class="num">${price(x.price)}</td><td class="num ${cls(x.change_pct)}">${pct(x.change_pct)}</td><td class="num">${x.volume_ratio ?? NA}×</td><td class="num">${x.iv ?? NA}%</td><td class="num">±${x.expected_move_pct ?? NA}%</td></tr>`).join("")}</tbody></table></div></details>
-        <p class="tiny" style="font-weight:600">${esc(sc.label)}</p>`;
-    }
-    body.innerHTML = h;
-  });
+// ---------- intraday trading: 15-min and 30-min setups (page database: intraday/live + intraday/cNN)
+const INTRA = { live: undefined, chunks: {} };
+async function loadIntra(force) {
+  if (INTRA.live !== undefined && !force) return INTRA.live;
+  await caps; if (!DB) return (INTRA.live = null);
+  try { const d = await DB.doc("intraday/live").get(); INTRA.live = d.exists ? { ...(await unz(d.data().z)), chunks: d.data().chunks } : null; INTRA.chunks = {}; } catch (e) { INTRA.live = null; }
+  return INTRA.live;
+}
+async function intraChart(isin) {
+  const L = await loadIntra(); if (!L) return L;
+  const k = "c" + String(fnv(isin) % L.chunks).padStart(2, "0");
+  if (!INTRA.chunks[k]) INTRA.chunks[k] = DB.doc("intraday/" + k).get().then((d) => (d.exists ? unz(d.data().z) : {})).catch(() => ({}));
+  return (await INTRA.chunks[k])[isin] || null;
+}
+const setupTxt = (s) => `${s.direction === "long" ? "LONG" : "SHORT"} · ${esc(s.type)} · entry ₹${price(s.entry_zone[0])}–${price(s.entry_zone[1])} · stop ₹${price(s.stop)} · targets ₹${price(s.targets[0])} / ₹${price(s.targets[1])} · reward:risk ${s.reward_risk}`;
+async function renderTrading() {
+  app().innerHTML = `<div><h1>Trading: 15-min and 30-min setups</h1><p class="sub">Every F&O stock's 15-min and 30-min chart is mapped (levels, VWAP, pivots, EMAs, RSI, MACD, ADX, Supertrend, volume, patterns, Dow structure) and tested for an entry point. Chart analysis for you to decide on: no trades are placed and no position sizes are given.</p></div><div id="tr-body"><p class="loading">Loading the latest scan…</p></div>`;
+  const L = await loadIntra(true), el = document.getElementById("tr-body"); if (!el) return;
+  if (!L) { el.innerHTML = `<p class="notice">The scan is read from this page's database: open the page on claude.ai while signed in.</p>`; return; }
+  const row = (s) => `<tr><td><div class="name"><a href="#stock-${esc(s.isin)}">${esc(s.symbol)}</a></div><div class="tiny">${esc(s.tf)} · candle closed ${esc(s.as_of.slice(11))}</div></td>
+    <td><span class="pill ${s.direction === "long" ? "good" : "bad"}">${s.direction === "long" ? "LONG" : "SHORT"}</span> <span class="small">${esc(s.type)}</span>${s.both_timeframes ? `<div class="tiny"><b>15 + 30 min agree</b></div>` : ""}</td>
+    <td class="num">₹${price(s.price)}</td><td class="num">₹${price(s.entry_zone[0])}–${price(s.entry_zone[1])}</td><td class="num down">₹${price(s.stop)}</td><td class="num up">₹${price(s.targets[0])}<div class="tiny">₹${price(s.targets[1])}</div></td>
+    <td class="num">${s.reward_risk}</td><td class="num">${s.agree}/${s.of}</td><td class="small" style="min-width:240px">${s.reasons.map(esc).join("; ")}<div class="tiny"><b>${esc(s.status || "")}</b>${(s.caution || []).length ? " · " + s.caution.map(esc).join("; ") : ""}</div></td></tr>`;
+  el.innerHTML = `<section class="verdict"><div class="eyebrow">Scan of ${L.scanned} F&O stocks · ${ago(L.generated_at)}</div><p class="big" style="margin:0">${L.setups.length} entry point${L.setups.length === 1 ? "" : "s"} right now</p><p class="small">Refreshed every 15 minutes in market hours, just after each candle closes.</p></section>
+    <section class="panel"><h2>Entry points now</h2>${L.setups.length ? `<div class="scroll"><table style="min-width:1050px"><thead><tr><th>Stock</th><th>Setup</th><th class="num">Price now</th><th class="num">Entry zone</th><th class="num">Stop (setup wrong)</th><th class="num">Targets</th><th class="num">Reward:risk</th><th class="num">Confirmations</th><th>Why · status</th></tr></thead><tbody>${L.setups.map(row).join("")}</tbody></table></div>` : `<p class="small">No stock passes the entry rules on its last closed 15-min or 30-min candle. Waiting is a position too.</p>`}
+      <p class="tiny">Confirmations: daily trend, Supertrend and MACD agreeing with the setup's direction. ${esc(L.method)}</p></section>
+    <section class="panel"><h2>No entry now: what would create one</h2><input type="search" id="tr-q" placeholder="Search stock" aria-label="Search"><div id="tr-none"></div></section>`;
+  const drawNone = () => { const q = document.getElementById("tr-q").value.trim().toLowerCase();
+    document.getElementById("tr-none").innerHTML = `<div class="scroll"><table><thead><tr><th>Stock</th><th class="num">Price</th><th>Trend 15 / 30 min</th><th>Wait for</th></tr></thead><tbody>${L.no_entry.filter((x) => !q || x.symbol.toLowerCase().includes(q)).slice(0, 250).map((x) => `<tr><td><a href="#stock-${esc(x.isin)}">${esc(x.symbol)}</a></td><td class="num">₹${price(x.price)}</td><td class="small">${esc(x.trend15)} / ${esc(x.trend30 || "—")}</td><td class="small">${esc(x.wait.replace(/^No entry now\.? ?/, ""))}</td></tr>`).join("")}</tbody></table></div>`; };
+  document.getElementById("tr-q").addEventListener("input", drawNone); drawNone();
+}
+let intraTf = "m15";
+async function intradaySection(isin) {
+  const el = document.getElementById("intra"); if (!el) return;
+  const d = await intraChart(isin);
+  if (d === undefined || d === null) { el.innerHTML = d === null ? `<p class="small">15/30-min analysis covers the ${INTRA.live ? INTRA.live.scanned : 218} F&O stocks.</p>` : `<p class="tiny">Open on claude.ai while signed in to load the intraday charts.</p>`; return; }
+  const draw = () => {
+    const a = d.a[intraTf], bars = intraTf === "m15" ? d.b15 : d.b30;
+    if (!a || !a.available) { el.innerHTML = `<p class="small">${esc((a && a.reason) || "Not available.")}</p>`; return; }
+    const s = a.setup;
+    el.innerHTML = `<div class="ranges"><button class="btn ${intraTf === "m15" ? "on" : ""}" data-tf="m15">15 min</button><button class="btn ${intraTf === "m30" ? "on" : ""}" data-tf="m30">30 min</button></div>
+      <div class="verdict ${s ? (s.direction === "long" ? "positive" : "negative") : ""}" style="margin:8px 0"><div class="eyebrow">${esc(a.tf)} · last closed candle ${esc(a.as_of.slice(11))} · scanned ${ago(INTRA.live.generated_at)}</div>
+        <p class="big" style="margin:0">${s ? (s.direction === "long" ? "Entry point: LONG" : "Entry point: SHORT") : "No entry now"}</p><p class="small" style="margin:4px 0 0">${esc(a.verdict)}</p>
+        ${s ? `<p class="small" style="margin:4px 0 0">${s.reasons.map(esc).join("; ")}. Confirmations: ${s.confirmations.map((c) => `${c.agrees ? "✓" : "✗"} ${esc(c.what)}`).join(" · ")}.</p>` : ""}
+        <p class="small" style="margin:4px 0 0"><b>Both timeframes:</b> ${esc(d.a.combined)}</p>${(a.caution || []).length ? `<p class="tiny">Caution: ${a.caution.map(esc).join("; ")}</p>` : ""}</div>
+      <div class="chart" id="ichart" style="height:440px"></div>
+      <div class="grid kv">${kv("Trend", `${esc(a.trend)} · ${esc(a.dow || "")}`)}${kv("RSI · ADX", `${a.ind.rsi ?? "—"} · ${a.ind.adx && a.ind.adx.adx != null ? `${a.ind.adx.adx} (${a.ind.adx.plus_di > a.ind.adx.minus_di ? "buyers" : "sellers"})` : "—"}`)}
+        ${kv("EMA 20 / 50 · VWAP", `₹${price(a.ind.ema20)} / ₹${price(a.ind.ema50)} · ₹${price(a.ind.vwap)}`)}${kv("Supertrend · MACD · volume", `${esc(a.ind.supertrend)} · ${a.ind.macd_hist > 0 ? "positive" : "negative"} · ${a.ind.volume_ratio ?? "—"}× avg`)}
+        ${kv("Levels above", a.levels.above.map(([v, n]) => `₹${price(v)} <span class="tiny">${esc(n)}</span>`).join("<br>") || "—")}${kv("Levels below", a.levels.below.map(([v, n]) => `₹${price(v)} <span class="tiny">${esc(n)}</span>`).join("<br>") || "—")}</div>
+      ${(a.patterns || []).length ? `<p class="small"><b>Patterns:</b> ${a.patterns.map((p) => `${esc(p.pattern)} (${esc(p.status)}, breakout ₹${price(p.breakout)})`).join("; ")}</p>` : ""}
+      <p class="tiny">${esc(d.a.note)}</p>`;
+    el.querySelectorAll("[data-tf]").forEach((b) => b.addEventListener("click", () => { intraTf = b.dataset.tf; draw(); }));
+    drawIntraChart(document.getElementById("ichart"), bars, a);
+  };
+  draw();
+}
+function drawIntraChart(el, bars, a) {
+  if (!el || !window.LightweightCharts || !bars.length) return;
+  if (ICH.intra) { ICH.intra.remove(); ICH.intra = null; }
+  const LC = window.LightweightCharts, cs = getComputedStyle(document.documentElement), tok = (n, f) => cs.getPropertyValue(n).trim() || f;
+  const UP = tok("--up", "#12733f"), DN = tok("--down", "#b42318"), INK = tok("--muted", "#5d6b66"), GRID = tok("--line", "#dde3e0");
+  const ts = (t) => Date.parse(t.replace(" ", "T") + ":00+05:30") / 1000 + 19800;  // shown in IST
+  const rows = bars.map((b) => ({ time: ts(b[0]), open: b[1], high: b[2], low: b[3], close: b[4], volume: b[5] }));
+  const ch = LC.createChart(el, { layout: { background: { type: "solid", color: "transparent" }, textColor: INK, fontSize: 11 }, grid: { vertLines: { color: GRID }, horzLines: { color: GRID } },
+    rightPriceScale: { borderVisible: false }, timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false, rightOffset: 4 }, autoSize: true });
+  ICH.intra = ch;
+  const cd = ch.addCandlestickSeries({ upColor: UP, downColor: DN, wickUpColor: UP, wickDownColor: DN, borderVisible: false });
+  cd.setData(rows.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
+  const vol = ch.addHistogramSeries({ priceScaleId: "v", priceFormat: { type: "volume" }, lastValueVisible: false, priceLineVisible: false });
+  ch.priceScale("v").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+  vol.setData(rows.map((r) => ({ time: r.time, value: r.volume, color: r.close >= r.open ? "rgba(18,115,63,.35)" : "rgba(180,35,24,.35)" })));
+  const ema = (n) => { const k = 2 / (n + 1); let e = null; return rows.map((r) => ({ time: r.time, value: (e = e == null ? r.close : r.close * k + e * (1 - k)) })); };
+  ch.addLineSeries({ color: "#2563eb", lineWidth: 1, priceLineVisible: false, lastValueVisible: false, title: "EMA20" }).setData(ema(20));
+  ch.addLineSeries({ color: "#7c3aed", lineWidth: 1, priceLineVisible: false, lastValueVisible: false, title: "EMA50" }).setData(ema(50));
+  // VWAP for each session
+  let day = "", pv = 0, vv = 0; const vw = bars.map((b, i) => { const d = b[0].slice(0, 10); if (d !== day) { day = d; pv = 0; vv = 0; } const tp = (b[2] + b[3] + b[4]) / 3; pv += tp * b[5]; vv += b[5]; return { time: rows[i].time, value: vv ? pv / vv : b[4] }; });
+  ch.addLineSeries({ color: "#f59e0b", lineWidth: 1, lineStyle: LC.LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false, title: "VWAP" }).setData(vw);
+  const pl = (p, color, title, style = LC.LineStyle.Dotted, w = 1) => p && cd.createPriceLine({ price: p, color, lineWidth: w, lineStyle: style, axisLabelVisible: true, title });
+  a.levels.above.slice(0, 4).forEach(([v, n]) => pl(v, "#94a3b8", n.replace(/ \(.*\)/, "")));
+  a.levels.below.slice(0, 4).forEach(([v, n]) => pl(v, "#94a3b8", n.replace(/ \(.*\)/, "")));
+  const s = a.setup;
+  if (s) {
+    pl(s.entry_zone[0], "#0ea5e9", "entry", LC.LineStyle.Solid, 2); pl(s.entry_zone[1], "#0ea5e9", "entry", LC.LineStyle.Solid, 2);
+    pl(s.stop, DN, "stop", LC.LineStyle.Solid, 2); pl(s.targets[0], UP, "target 1", LC.LineStyle.Solid, 2); pl(s.targets[1], UP, "target 2", LC.LineStyle.Dashed, 1);
+  }
+  const byStr = {}; bars.forEach((b, i) => (byStr[b[0]] = rows[i].time));
+  (a.patterns || []).forEach((p) => (p.lines || []).forEach(([x, y]) => { const t1 = byStr[x[0]], t2 = byStr[y[0]] || rows[rows.length - 1].time; if (t1 && t2 && t1 < t2)
+    ch.addLineSeries({ color: /bull/.test(p.bias) ? UP : /bear/.test(p.bias) ? DN : "#0ea5e9", lineWidth: 2, lineStyle: LC.LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false }).setData([{ time: t1, value: x[1] }, { time: t2, value: y[1] }]); }));
+  ch.timeScale().setVisibleLogicalRange({ from: Math.max(0, rows.length - 75), to: rows.length + 3 });
 }
 
 // ---------- boot (all data is embedded in this page by the refresh job)

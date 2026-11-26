@@ -1,0 +1,257 @@
+"""Intraday (15-minute and 30-minute) setups: map the chart, then say whether there is an entry point now.
+
+For each timeframe: levels (previous day high/low/close, today's open, VWAP, CPR pivots, swing support and
+resistance), indicators (EMA 20/50, RSI 14, MACD, ADX/DI, Supertrend, ATR, volume against its average), Dow
+structure and chart/candle patterns. Then two standard setups are tested in each direction:
+
+  Breakout  - a closed candle beyond a key level on above-average volume, momentum and trend strength behind it
+  Pullback  - in an established intraday trend, price back at the 20 EMA / VWAP / support with a candle turning
+              in the trend's direction
+
+A setup is reported only with an entry zone, an invalidation (stop) level, targets at the next levels and a
+reward-to-risk of at least 1.5. Otherwise the answer is "no entry now" with what would create one.
+This is chart analysis for the owner, who decides and places trades himself. No position sizes."""
+from datetime import datetime
+
+from . import patterns, technicals
+from .charts import supertrend
+from .indicators import adx
+
+MIN_RR = 1.5
+
+
+def to_30m(c15: list[dict]) -> list[dict]:
+    """Two 15-minute bars -> one 30-minute bar (session starts 09:15, so 09:15+09:30, 09:45+10:00, ...)."""
+    out, cur = [], None
+    for b in c15:
+        hh, mm = int(b["t"][11:13]), int(b["t"][14:16])
+        slot = ((hh * 60 + mm) - (9 * 60 + 15)) // 30
+        key = (b["t"][:10], slot)
+        if cur and cur["_k"] == key:
+            cur.update(high=max(cur["high"], b["high"]), low=min(cur["low"], b["low"]), close=b["close"], volume=cur["volume"] + b["volume"])
+        else:
+            cur = {**b, "_k": key}
+            out.append(cur)
+    for x in out:
+        x.pop("_k", None)
+    return out
+
+
+def _ema(x, n):
+    k, out, e = 2 / (n + 1), [], None
+    for v in x:
+        e = v if e is None else v * k + e * (1 - k)
+        out.append(e)
+    return out
+
+
+def _rsi(cl, n=14):
+    return technicals.rsi(cl, n)
+
+
+def _vwap_today(c):
+    d = c[-1]["t"][:10]
+    pv = vol = 0.0
+    for b in c:
+        if b["t"][:10] == d:
+            tp = (b["high"] + b["low"] + b["close"]) / 3
+            pv += tp * b["volume"]
+            vol += b["volume"]
+    return pv / vol if vol else None
+
+
+def _days(c):
+    days = {}
+    for b in c:
+        d = b["t"][:10]
+        x = days.setdefault(d, {"date": d, "open": b["open"], "high": b["high"], "low": b["low"], "close": b["close"]})
+        x.update(high=max(x["high"], b["high"]), low=min(x["low"], b["low"]), close=b["close"])
+    return [days[k] for k in sorted(days)]
+
+
+def analyse_tf(c: list[dict], tf: str, daily_trend: str | None = None) -> dict:
+    """Everything mapped on one timeframe, plus the setup verdict."""
+    c = [b for b in c if b.get("volume") is not None]
+    if len(c) < 60:
+        return {"available": False, "reason": "Not enough intraday candles."}
+    cl = [b["close"] for b in c]
+    price = cl[-1]
+    e20, e50 = _ema(cl, 20), _ema(cl, 50)
+    macd_line = [a - b for a, b in zip(_ema(cl, 12), _ema(cl, 26))]
+    sig = _ema(macd_line, 9)
+    hist = [a - b for a, b in zip(macd_line, sig)]
+    rsi = _rsi(cl)
+    atr = technicals.atr(c, 14)
+    ad = adx(c[-200:]) or {}
+    _, st_dirs = supertrend(c)
+    vol_avg = sum(b["volume"] for b in c[-21:-1]) / 20
+    vol_ratio = round(c[-1]["volume"] / vol_avg, 2) if vol_avg else None
+    vwap = _vwap_today(c)
+    days = _days(c)
+    prev = days[-2] if len(days) >= 2 else None
+    today = days[-1]
+    pivots = None
+    if prev:
+        p = (prev["high"] + prev["low"] + prev["close"]) / 3
+        bc = (prev["high"] + prev["low"]) / 2
+        tc = 2 * p - bc
+        pivots = {"pivot": round(p, 2), "bc": round(min(bc, tc), 2), "tc": round(max(bc, tc), 2),
+                  "r1": round(2 * p - prev["low"], 2), "s1": round(2 * p - prev["high"], 2),
+                  "r2": round(p + prev["high"] - prev["low"], 2), "s2": round(p - (prev["high"] - prev["low"]), 2)}
+    sw = technicals.swing_levels(c[-300:], price, window=3, lookback=300, tol=0.004)
+    sup = sorted([l for l in sw if l["kind"] == "support"], key=lambda l: -l["level"])[:3]
+    res = sorted([l for l in sw if l["kind"] == "resistance"], key=lambda l: l["level"])[:3]
+    pat = patterns.detect(c[-200:], window=3, recent=30)
+    cand = technicals.candle_patterns(c[-60:], last=3)
+
+    # Every level that matters, with its name
+    lv = []
+    if prev:
+        lv += [(prev["high"], "previous day high"), (prev["low"], "previous day low"), (prev["close"], "previous close")]
+    lv += [(today["open"], "today's open")]
+    if vwap:
+        lv.append((vwap, "VWAP"))
+    if pivots:
+        lv += [(pivots["r1"], "R1"), (pivots["s1"], "S1"), (pivots["r2"], "R2"), (pivots["s2"], "S2"), (pivots["pivot"], "pivot")]
+    lv += [(l["level"], f"swing level ({l['touches']} touches)") for l in res + sup]
+    for p_ in pat["patterns"]:
+        lv.append((p_["breakout"], f"{p_['pattern']} breakout"))
+        if p_.get("breakdown") is not None:
+            lv.append((p_["breakdown"], f"{p_['pattern']} lower line"))
+    lv = sorted({round(v, 2): n for v, n in lv if v}.items())
+    above = [(v, n) for v, n in lv if v > price * 1.0005]
+    below = [(v, n) for v, n in lv if v < price * 0.9995][::-1]
+
+    up = e20[-1] > e50[-1] and price > (vwap or price)
+    down = e20[-1] < e50[-1] and price < (vwap or price)
+    dow = (pat.get("dow") or {}).get("trend", "")
+    last, prevb = c[-1], c[-2]
+    bull_candle = last["close"] > last["open"] or any(x["date"] == last["date"] and x["pattern"] in ("Hammer", "Bullish engulfing", "Morning star", "Bullish harami", "Piercing line") for x in cand)
+    bear_candle = last["close"] < last["open"] or any(x["date"] == last["date"] and x["pattern"] in ("Shooting star", "Bearish engulfing", "Evening star", "Bearish harami", "Dark cloud cover") for x in cand)
+
+    def setup(direction):
+        long = direction == "long"
+        sgn = 1 if long else -1
+        reasons, kind = [], None
+        # Breakout: the last closed candle crossed a key level
+        crossed = [(v, n) for v, n in lv if (prevb["close"] <= v < last["close"]) if long] if long else \
+                  [(v, n) for v, n in lv if (last["close"] < v <= prevb["close"])]
+        if crossed and vol_ratio and vol_ratio >= 1.5 and ad.get("adx", 0) >= 20 and rsi and (55 <= rsi <= 75 if long else 25 <= rsi <= 45):
+            lvl, name = crossed[-1] if long else crossed[0]
+            kind = "Breakout"
+            entry = (lvl, round(lvl + sgn * 0.3 * atr, 2))
+            stop = round(lvl - sgn * 1.0 * atr, 2)
+            reasons += [f"closed {'above' if long else 'below'} {name} ₹{lvl:,.2f}", f"volume {vol_ratio}× its average",
+                        f"ADX {ad['adx']} ({'buyers' if ad['plus_di'] > ad['minus_di'] else 'sellers'} in control)", f"RSI {rsi:.0f}"]
+        # Pullback in an established trend
+        elif (up if long else down) and ("uptrend" in dow if long else "downtrend" in dow) and rsi and (40 <= rsi <= 62 if long else 38 <= rsi <= 60):
+            near = [(abs(price - x) / atr, n, x) for x, n in ((e20[-1], "20 EMA"), (vwap, "VWAP")) if x] + \
+                   [(abs(price - l["level"]) / atr, "swing support" if long else "swing resistance", l["level"]) for l in (sup if long else res)]
+            near = [x for x in near if x[0] <= 0.5]
+            if near and (bull_candle if long else bear_candle):
+                kind = "Pullback"
+                anchor = near[0]
+                swings = [s for s in patterns.zigzag(c[-120:], 3) if s["type"] == ("low" if long else "high")]
+                ref = swings[-1]["price"] if swings else price - sgn * atr
+                entry = (round(price - sgn * 0.15 * atr, 2), round(price + sgn * 0.15 * atr, 2))
+                stop = round(ref - sgn * 0.2 * atr, 2)
+                if abs(price - stop) < 0.6 * atr:
+                    stop = round(price - sgn * 0.8 * atr, 2)
+                reasons += [f"intraday {'uptrend' if long else 'downtrend'} ({dow.split(':')[0]}; 20 EMA {'above' if long else 'below'} 50 EMA; price {'above' if long else 'below'} VWAP)",
+                            f"pulled back to {anchor[1]} ₹{anchor[2]:,.2f}", f"last candle turned {'up' if long else 'down'}", f"RSI {rsi:.0f}"]
+        if not kind:
+            return None
+        e_mid = (entry[0] + entry[1]) / 2
+        risk = abs(e_mid - stop)
+        tgt_levels = [v for v, n in (above if long else below) if (v - e_mid) * sgn > 0.5 * risk]
+        t1 = tgt_levels[0] if tgt_levels else round(e_mid + sgn * 2 * risk, 2)
+        t2 = tgt_levels[1] if len(tgt_levels) > 1 else round(e_mid + sgn * 3 * risk, 2)
+        rr = round(abs(t1 - e_mid) / risk, 2) if risk else None
+        conf = []
+        if daily_trend:
+            conf.append(("daily trend " + daily_trend, ("up" in daily_trend) == long))
+        conf.append(("Supertrend " + ("up" if st_dirs[-1] == 1 else "down"), (st_dirs[-1] == 1) == long))
+        conf.append(("MACD histogram " + ("rising" if hist[-1] > hist[-2] else "falling"), (hist[-1] > hist[-2]) == long))
+        agree = sum(ok for _, ok in conf)
+        return {"direction": direction, "type": kind, "entry_zone": [min(entry), max(entry)], "stop": stop,
+                "targets": [round(t1, 2), round(t2, 2)], "reward_risk": rr, "reasons": reasons,
+                "confirmations": [{"what": w, "agrees": ok} for w, ok in conf], "agree": agree, "of": len(conf),
+                "valid": rr is not None and rr >= MIN_RR}
+
+    setups = [s for s in (setup("long"), setup("short")) if s]
+    good = [s for s in setups if s["valid"]]
+    hhmm = c[-1]["t"][11:16]
+    if good:
+        best = max(good, key=lambda s: (s["agree"], s["reward_risk"]))
+        verdict = (f"Entry point: {best['direction'].upper()} ({best['type'].lower()}) — entry ₹{best['entry_zone'][0]:,.2f}–₹{best['entry_zone'][1]:,.2f}, "
+                   f"stop ₹{best['stop']:,.2f}, targets ₹{best['targets'][0]:,.2f} / ₹{best['targets'][1]:,.2f} (reward:risk {best['reward_risk']}), "
+                   f"{best['agree']} of {best['of']} confirmations agree.")
+    else:
+        best = None
+        nr = above[0] if above else None
+        ns = below[0] if below else None
+        wait = []
+        if nr:
+            wait.append(f"a {tf} close above {nr[1]} ₹{nr[0]:,.2f} on volume (breakout)")
+        if ns:
+            wait.append(f"a {tf} close below {ns[1]} ₹{ns[0]:,.2f} on volume (breakdown)")
+        if up:
+            wait.append(f"a pull back to the 20 EMA ₹{e20[-1]:,.2f} / VWAP that holds (pullback entry)")
+        elif down:
+            wait.append(f"a bounce to the 20 EMA ₹{e20[-1]:,.2f} / VWAP that fails (pullback short)")
+        weak = [s for s in setups if not s["valid"]]
+        verdict = ("No entry now" + (f": a {weak[0]['type'].lower()} {weak[0]['direction']} is forming but reward:risk is only {weak[0]['reward_risk']}" if weak else "")
+                   + ". Wait for " + "; or ".join(wait) + ".")
+    caution = []
+    if hhmm < "09:30":
+        caution.append("first 15 minutes: moves are noisy")
+    if hhmm >= "15:00":
+        caution.append("last 30 minutes of the session")
+    if atr and price and atr / price * 100 < 0.15:
+        caution.append("very low volatility: targets may not be reached")
+    return {
+        "available": True, "tf": tf, "as_of": c[-1]["t"][:16].replace("T", " "), "price": price,
+        "verdict": verdict, "setup": best, "setups": setups, "caution": caution,
+        "trend": "up" if up else "down" if down else "sideways",
+        "dow": dow + (f" — {(pat.get('dow') or {}).get('break')}" if (pat.get("dow") or {}).get("break") else ""),
+        "ind": {"ema20": round(e20[-1], 2), "ema50": round(e50[-1], 2), "vwap": round(vwap, 2) if vwap else None, "rsi": round(rsi, 1) if rsi else None,
+                "macd_hist": round(hist[-1], 3), "adx": ad, "supertrend": "up" if st_dirs[-1] == 1 else "down", "atr": round(atr, 2) if atr else None,
+                "volume_ratio": vol_ratio},
+        "levels": {"above": [[v, n] for v, n in above[:6]], "below": [[v, n] for v, n in below[:6]], "pivots": pivots,
+                   "prev_day": prev, "today_open": today["open"]},
+        "patterns": pat["patterns"], "candles": [x for x in cand][-3:],
+    }
+
+
+def _closed(c: list[dict], minutes: int, now: datetime) -> list[dict]:
+    """Only candles that have finished (the one still forming would give false signals)."""
+    return [b for b in c if datetime.fromisoformat(b["t"]).timestamp() + minutes * 60 <= now.timestamp()]
+
+
+def analyse(c15: list[dict], daily: list[dict] | None = None, now: datetime | None = None) -> dict:
+    """15-minute and 30-minute analysis with a combined answer, on closed candles."""
+    from zoneinfo import ZoneInfo
+    now = now or datetime.now(ZoneInfo("Asia/Kolkata"))
+    live = c15[-1]["close"] if c15 else None
+    c30 = _closed(to_30m(c15), 30, now)
+    c15 = _closed(c15, 15, now)
+    dt = None
+    if daily and len(daily) >= 50:
+        cl = [d["close"] for d in daily]
+        s20, s50 = sum(cl[-20:]) / 20, sum(cl[-50:]) / 50
+        dt = "up" if cl[-1] > s20 > s50 else "down" if cl[-1] < s20 < s50 else "sideways"
+    a15 = analyse_tf(c15[-400:], "15-min", dt)
+    a30 = analyse_tf(c30[-300:], "30-min", dt)
+    s15, s30 = a15.get("setup"), a30.get("setup")
+    if s15 and s30 and s15["direction"] == s30["direction"]:
+        combined = f"15-min and 30-min agree: {s15['direction'].upper()} setup on both (stronger)."
+    elif s15 or s30:
+        s = s15 or s30
+        other = a30 if s15 else a15
+        combined = f"{'15' if s15 else '30'}-min {s['direction']} setup; the {'30' if s15 else '15'}-min chart trend is {other.get('trend', '—')}" + \
+                   (" (agrees)." if other.get("trend") == ("up" if s["direction"] == "long" else "down") else " (does not confirm: weaker).")
+    else:
+        combined = "No entry on 15-min or 30-min right now."
+    return {"daily_trend": dt, "m15": a15, "m30": a30, "combined": combined, "live_price": live,
+            "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+            "note": "Chart analysis only: entry zone, stop (where the setup is wrong) and targets at the next levels. You decide and place any trade yourself."}

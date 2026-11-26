@@ -5,7 +5,9 @@
 - **Analysis only. Never trade.** Never place, modify or cancel any order, and never move money, on any
   broker or platform, for any reason. Only the owner takes positions, and only by doing it themselves.
 - **No recommendations.** Never tell the owner to buy or sell a stock, option or future, and never pick a
-  strike, quantity or position size for them. Describe the picture (fundamentals, economy, commodities,
+  strike, quantity or position size for them. Exception the owner asked for (26 Nov 2026): on 15-min and
+  30-min charts, flag whether there is an entry point now (direction, entry zone, stop, targets, reward:risk,
+  reasons) or "no entry now"; still never place trades and never give position sizes. Describe the picture (fundamentals, economy, commodities,
   news, chart structure, option data), the bull and bear cases, and what would change the view.
 - **Nothing outside analysis without being asked.** Do not take actions beyond analysis and building this
   portal unless the owner explicitly asks.
