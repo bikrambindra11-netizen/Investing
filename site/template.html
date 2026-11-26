@@ -1232,7 +1232,7 @@ async function intradaySection(isin) {
   const draw = () => {
     const a = d.a[intraTf], bars = (d.bars || {})[intraTf] || [];
     if (!a || !a.available) { el.innerHTML = `<p class="small">${esc((a && a.reason) || "Not available.")}</p>`; return; }
-    const s = a.setup;
+    const s = a.setup && a.setup.entry ? a.setup : null, forming = a.setup && !a.setup.entry ? a.setup : null;
     const al = d.a.alignment || { trends: {} };
     el.innerHTML = `<div class="ranges">${TFS.map(([k, l]) => { const t = (d.a[k] || {}), s_ = t.setup && t.setup.entry ? t.setup : null; return `<button class="btn ${intraTf === k ? "on" : ""}" data-tf="${k}" title="${esc(t.trend || "")}">${l}${s_ ? (s_.direction === "long" ? " ▲" : " ▼") : ""}</button>`; }).join("")}</div>
       <div class="scroll" style="margin-top:6px"><table><thead><tr><th></th>${TFS.map(([k, l]) => `<th class="num">${l}</th>`).join("")}</tr></thead><tbody>
