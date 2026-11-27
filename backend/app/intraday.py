@@ -190,7 +190,7 @@ def _days(c):
     return [days[k] for k in sorted(days)]
 
 
-def analyse_tf(c: list[dict], tf: str, daily_trend: str | None = None, htf: bool = False) -> dict:
+def analyse_tf(c: list[dict], tf: str, daily_trend: str | None = None, htf: bool = False, light: bool = False) -> dict:
     """htf: daily/weekly/monthly bars (no VWAP; 'previous bar' instead of previous day; no session-time cautions)."""
     """Everything mapped on one timeframe, plus the setup verdict."""
     c = [b for b in c if b.get("volume") is not None]
@@ -227,8 +227,12 @@ def analyse_tf(c: list[dict], tf: str, daily_trend: str | None = None, htf: bool
     sw = technicals.swing_levels(c[-300:], price, window=3, lookback=300, tol=0.004)
     sup = sorted([l for l in sw if l["kind"] == "support"], key=lambda l: -l["level"])[:3]
     res = sorted([l for l in sw if l["kind"] == "resistance"], key=lambda l: l["level"])[:3]
-    pat = patterns.detect(c[-200:], window=3, recent=30)
-    cand = technicals.candle_patterns(c[-60:], last=3)
+    if light:  # backtests: skip chart/candle pattern search (same setup rules otherwise)
+        pat = {"dow": patterns.dow(c[-200:], 3), "patterns": []}
+        cand = []
+    else:
+        pat = patterns.detect(c[-200:], window=3, recent=30)
+        cand = technicals.candle_patterns(c[-60:], last=3)
 
     # Every level that matters, with its name
     lv = []
